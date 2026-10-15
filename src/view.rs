@@ -112,6 +112,7 @@ impl View {
     /// file, usually `include_bytes!("../assets/…")`, so the game needs no
     /// files at run time. The texture is made on first use (it needs the
     /// window) and kept; an invalid file is a programming error and panics.
+    #[allow(dead_code)] // Part of the game API; not every game uses it.
     pub fn image(&self, bytes: &'static [u8], x: f32, y: f32, w: f32, h: f32, color: Color) {
         thread_local! {
             static TEXTURES: std::cell::RefCell<std::collections::HashMap<usize, Texture2D>> =

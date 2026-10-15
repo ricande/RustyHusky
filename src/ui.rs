@@ -99,6 +99,7 @@ impl Input {
     }
 
     /// The left button was pressed on `rect` this frame.
+    #[allow(dead_code)] // Part of the game API; not every game uses it.
     pub fn clicked(&self, rect: Rect) -> bool {
         self.left_pressed && self.pointer.is_some_and(|p| rect.contains(p))
     }

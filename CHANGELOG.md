@@ -6,6 +6,21 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+Found by building the first game on the template,
+[Husky Bounce](https://github.com/ricande/husky-bounce):
+
+- Deleting `src/example.rs`, as docs/NEW_GAME.md says, broke the build: the
+  framework's tests used the example game. They now have their own test
+  game.
+- A game that did not use `View::image`, `Input::clicked` or its own sounds
+  (`Sfx::Game`) failed `clippy -D warnings` with dead-code errors. These are
+  now marked as game API.
+- docs/NEW_GAME.md recommended the global `macroquad::rand`, which is not
+  deterministic when tests run in parallel; it now shows a small per-game
+  generator.
+
 ### Changed
 
 - Prioritize recording is now the default recording mode, and old

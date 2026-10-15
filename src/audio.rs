@@ -21,6 +21,7 @@ pub enum Sfx {
     /// A level was completed.
     Success,
     /// The game's sound number `n` in `Game::SOUNDS` of the active game.
+    #[allow(dead_code)] // Part of the game API; a game may have no sounds.
     Game(usize),
 }
 

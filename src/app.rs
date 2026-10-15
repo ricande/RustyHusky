@@ -470,11 +470,53 @@ impl<G: Game> App<G> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::example::{ExampleGame, FINISH_BUTTON};
     use crate::game::FIXED_DT;
+    use crate::view::View;
     use macroquad::math::Vec2;
 
-    type TestApp = App<ExampleGame>;
+    /// A minimal game for the framework's tests, so they do not depend on
+    /// whatever game is plugged in: Space scores with a blip; Enter or a
+    /// click on `FINISH_BUTTON` finishes the level.
+    struct TestGame {
+        score: u32,
+        done: bool,
+        sounds: Vec<Sfx>,
+    }
+
+    const FINISH_BUTTON: Rect = Rect {
+        x: 120.0,
+        y: 700.0,
+        w: 300.0,
+        h: 56.0,
+    };
+
+    impl Game for TestGame {
+        const TEXTS: &'static [crate::i18n::Text] = &[];
+        fn new(_level: u32) -> Self {
+            TestGame {
+                score: 0,
+                done: false,
+                sounds: Vec::new(),
+            }
+        }
+        fn handle(&mut self, input: &Input) {
+            if input.key(Key::Space) {
+                self.score += 1;
+                self.sounds.push(Sfx::Blip);
+            }
+            self.done |= input.key(Key::Enter) || input.clicked(FINISH_BUTTON);
+        }
+        fn update(&mut self, _dt: f32) {}
+        fn draw(&self, _view: &View) {}
+        fn take_sounds(&mut self) -> Vec<Sfx> {
+            std::mem::take(&mut self.sounds)
+        }
+        fn finished(&self) -> Option<RoundResult> {
+            self.done.then_some(RoundResult { score: self.score })
+        }
+    }
+
+    type TestApp = App<TestGame>;
 
     fn app() -> TestApp {
         App::new(Settings::default(), None)

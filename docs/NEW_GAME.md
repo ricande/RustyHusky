@@ -13,7 +13,8 @@ cd my-game
 `new-game.sh` sets the name in `src/config.rs` (window and menu title,
 folders, file names, environment variable prefix) and `Cargo.toml`, resets
 the version to 0.1.0 and starts a new `CHANGELOG.md` and
-`docs/GAME_RULES.md`. Then rewrite the README for your game.
+`docs/GAME_RULES.md`. Then rewrite the README for your game; keep its
+requirements (Rust version, Linux packages, FFmpeg) and its license section.
 
 ## 2. Write the game module
 
@@ -32,7 +33,9 @@ Copy `src/example.rs` to `src/my_game.rs`, add `mod my_game;` and set
 | `take_sounds()` | Return the sounds started since the last call. |
 | `finished()` | `Some(RoundResult { score })` when the level is over. |
 
-Then delete `src/example.rs`.
+Then delete `src/example.rs` (and `assets/paw.png`, `assets/chime.wav`
+unless you use them). The framework's tests have their own test game, and
+helpers your game does not use are fine.
 
 ## 3. Rules that keep the video right
 
@@ -67,11 +70,29 @@ does for its button.
 
 ## Randomness
 
-Use `macroquad::rand` (`rand::gen_range(0, 10)` …) and seed it at the start
-of a round, for example `rand::srand(level as u64)` in `new`. The same seed
-and the same input then give the same round, which helps when testing with
-scripts. Draw random numbers in `handle`/`update`, never in `draw` (it runs
-more than once per frame while recording).
+Keep a small random generator in your game, seeded per level, rather than
+the global `macroquad::rand`: the framework's tests run in parallel, and a
+shared global generator makes rounds differ between runs. For example:
+
+```rust
+/// xorshift, one per game; the same seed gives the same level.
+struct Rng(u64);
+impl Rng {
+    fn new(seed: u64) -> Self { Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1) }
+    /// A number in [0, 1).
+    fn next(&mut self) -> f32 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        (self.0 >> 40) as f32 / (1u64 << 24) as f32
+    }
+}
+```
+
+Create it in `new` with `Rng::new(level as u64)` and draw numbers in
+`handle`/`update`, never in `draw` (it runs more than once per frame while
+recording). [Husky Bounce](https://github.com/ricande/husky-bounce) does
+this.
 
 ## Images
 
