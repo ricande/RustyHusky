@@ -190,7 +190,8 @@ the rest. In short:
    `cargo test` fails if a key is missing or the languages' placeholders
    differ.
 5. Need another key? Add a variant to `ui::Key` and one row to `ui::KEYS`.
-   Another sound? Add it to `audio::Sfx`, `ALL` and `recipe`.
+   Another sound? Add a WAV file to `Game::SOUNDS`
+   (see [docs/NEW_GAME.md](docs/NEW_GAME.md)).
 6. Delete `src/example.rs` and describe your rules in
    [docs/GAME_RULES.md](docs/GAME_RULES.md).
 
