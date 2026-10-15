@@ -124,7 +124,7 @@ Say clearly what you verified by running the program and what only by tests.
 - `vendor/miniquad-0.4.11` is miniquad as published plus the patches in
   `vendor/patches`. Never edit it directly; change it only by adding or
   removing a patch, and keep `scripts/check-vendored-miniquad.sh` passing.
-  Its two build warnings are upstream's. See `docs/UPSTREAM_FIXES.md`.
+  Its build warnings are upstream's. See `docs/UPSTREAM_FIXES.md`.
 - The project is GPL-3.0-or-later. Keep `LICENSES/MIT-RustOut.txt` and
   `THIRD_PARTY_NOTICES.md`; when adding a dependency, check that its license
   is compatible with GPLv3 and update the notices if needed.

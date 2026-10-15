@@ -512,7 +512,7 @@ impl Recorder {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 impl Recorder {
     /// A recorder whose encoder is `sh -c script`, with frames of
     /// `frame_bytes` bytes and a queue of `queue` pictures.
@@ -522,10 +522,12 @@ impl Recorder {
         Recorder::spawn(cmd, temp_path("mp4"), frame_bytes, queue).unwrap()
     }
 
+    #[cfg(target_os = "linux")]
     pub fn frames(&self) -> u64 {
         self.frames
     }
 
+    #[cfg(target_os = "linux")]
     pub fn hits(&self) -> &[SoundHit] {
         &self.hits
     }

@@ -89,7 +89,7 @@ impl Lockstep {
     }
 
     /// Video frames produced so far.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub fn produced(&self) -> u64 {
         self.produced
     }
@@ -183,14 +183,18 @@ impl Lockstep {
     }
 }
 
-#[cfg(test)]
+// The tests drive fake encoders through `sh`, so they need a Unix system;
+// the slow-encoder ones also need GNU `dd`, so Linux.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::game::RoundResult;
     use crate::settings::Settings;
     use crate::ui::{Input, Key};
+    #[cfg(target_os = "linux")]
     use crate::video::SoundHit;
     use crate::view::View;
+    #[cfg(target_os = "linux")]
     use std::path::PathBuf;
 
     /// Small pictures keep the test files small, but are larger than a pipe
@@ -253,17 +257,20 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
     fn out_path(name: &str) -> PathBuf {
         let dir = crate::tests::temp_dir(name);
         std::fs::create_dir_all(&dir).unwrap();
         dir.join("frames.raw")
     }
 
+    #[cfg(target_os = "linux")]
     /// `cat` keeps up with anything.
     fn fast(out: &std::path::Path) -> String {
         format!("cat > '{}'", out.display())
     }
 
+    #[cfg(target_os = "linux")]
     /// Reads one picture at a time with a pause: about 25 per second, and
     /// it never stops making progress.
     fn slow(out: &std::path::Path) -> String {
@@ -276,6 +283,7 @@ mod tests {
         )
     }
 
+    #[cfg(target_os = "linux")]
     /// What a recorded round looked like.
     struct Run {
         /// (steps, presses) of every video frame, in file order.
@@ -287,6 +295,7 @@ mod tests {
         waits: u32,
     }
 
+    #[cfg(target_os = "linux")]
     /// Plays a round of `Counter` in "Prioritize recording" timing at a
     /// 60 Hz display. Space is pressed when frames 5 and 12 are next, and
     /// the game is paused for 10 display frames when frame 20 is next.
@@ -346,6 +355,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
     /// The timeline every run must have: frame k shows the state after
     /// exactly 2k physics steps, from frame 0 (no step) to frame 40 (the
     /// level finished), each frame once; presses delivered once each.

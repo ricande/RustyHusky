@@ -91,9 +91,9 @@ run in CI): it downloads miniquad 0.4.11 from crates.io, checks its SHA-256,
 applies `vendor/patches/*.patch` and requires the result to equal
 `vendor/miniquad-0.4.11` exactly.
 
-Building prints two warnings from miniquad's own code (`set_or_replace_display`
-is never used; a shared reference to a mutable static). They are unchanged
-upstream code and are not fixed here.
+Building prints one or two warnings from miniquad's own code, depending on
+the platform (for example `set_or_replace_display` is never used). They are
+unchanged upstream code and are not fixed here.
 
 ### Removing the copy
 
