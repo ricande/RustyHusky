@@ -21,12 +21,12 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::audio::{wav_bytes, SAMPLE_RATE, VOLUME};
+use crate::config::{self, APP_ID, APP_NAME};
 use crate::t;
 
 pub const WIDTH: u32 = 1080;
 pub const HEIGHT: u32 = 1920;
 pub const FPS: u32 = 60;
-const TEMP_PREFIX: &str = "rustyhusky-rec-";
 /// Longest wait for ffmpeg to finish a file before it is stopped, so a
 /// stuck encoder can never lock the game.
 const FFMPEG_TIMEOUT: Duration = Duration::from_secs(60);
@@ -93,11 +93,9 @@ pub fn mix(hits: &[SoundHit], samples: &[Vec<f32>], duration: f64) -> Vec<f32> {
     out
 }
 
-/// The ffmpeg program: `RUSTYHUSKY_FFMPEG` if set, else `ffmpeg` in `PATH`.
+/// The ffmpeg program: `<ENV_PREFIX>_FFMPEG` if set, else `ffmpeg` in `PATH`.
 fn ffmpeg_program() -> OsString {
-    std::env::var_os("RUSTYHUSKY_FFMPEG")
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| "ffmpeg".into())
+    config::env("FFMPEG").unwrap_or_else(|| "ffmpeg".into())
 }
 
 fn ffmpeg() -> Command {
@@ -126,10 +124,15 @@ pub fn check_ffmpeg() -> Result<(), String> {
     }
 }
 
+/// Temporary recording files start with this, e.g. `rustyhusky-rec-`.
+fn temp_prefix() -> String {
+    format!("{APP_ID}-rec-")
+}
+
 fn temp_path(ext: &str) -> PathBuf {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let name = format!("{TEMP_PREFIX}{}-{n}.{ext}", std::process::id());
+    let name = format!("{}{}-{n}.{ext}", temp_prefix(), std::process::id());
     std::env::temp_dir().join(name)
 }
 
@@ -147,7 +150,7 @@ pub fn remove_old_temp_files() {
             .metadata()
             .and_then(|m| m.modified())
             .is_ok_and(|t| t.elapsed().unwrap_or_default() > day);
-        if name.to_string_lossy().starts_with(TEMP_PREFIX) && old {
+        if name.to_string_lossy().starts_with(&temp_prefix()) && old {
             let _ = std::fs::remove_file(entry.path());
         }
     }
@@ -398,11 +401,11 @@ impl Recording {
     }
 }
 
-/// The folder videos are saved in: the user's video folder + `RustyHusky`
-/// (overridable with `RUSTYHUSKY_VIDEO_DIR`).
+/// The folder videos are saved in: the user's video folder + `APP_NAME`
+/// (overridable with `<ENV_PREFIX>_VIDEO_DIR`).
 pub fn default_dir() -> PathBuf {
     let env = |key: &str| std::env::var_os(key).filter(|v| !v.is_empty());
-    if let Some(dir) = env("RUSTYHUSKY_VIDEO_DIR") {
+    if let Some(dir) = config::env("VIDEO_DIR") {
         return PathBuf::from(dir);
     }
     let home = env("HOME")
@@ -422,7 +425,7 @@ pub fn default_dir() -> PathBuf {
             })
             .or_else(|| home.map(|h| h.join("Videos")))
     };
-    videos.unwrap_or_default().join("RustyHusky")
+    videos.unwrap_or_default().join(APP_NAME)
 }
 
 /// Reads `XDG_VIDEOS_DIR="$HOME/Videos"` from `user-dirs.dirs`.
@@ -439,13 +442,14 @@ fn xdg_videos_dir(dirs: &str, home: &Path) -> Option<PathBuf> {
     (path != home).then_some(path)
 }
 
-/// File name from the time (UTC), e.g. `rustyhusky-2026-10-15-153000`.
+/// File name from `APP_ID` and the time (UTC), e.g.
+/// `rustyhusky-2026-10-15-153000`.
 pub fn default_name(now: SystemTime) -> String {
     let secs = now.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     let (y, m, d) = civil_from_days((secs / 86_400) as i64);
     let s = secs % 86_400;
     format!(
-        "rustyhusky-{y:04}-{m:02}-{d:02}-{:02}{:02}{:02}",
+        "{APP_ID}-{y:04}-{m:02}-{d:02}-{:02}{:02}{:02}",
         s / 3600,
         s / 60 % 60,
         s % 60
@@ -547,7 +551,7 @@ mod tests {
     #[test]
     fn names_and_paths() {
         let t = UNIX_EPOCH + Duration::from_secs(1_791_991_800); // 2026-10-14 15:30:00 UTC
-        assert_eq!(default_name(t), "rustyhusky-2026-10-14-153000");
+        assert_eq!(default_name(t), format!("{APP_ID}-2026-10-14-153000"));
         assert_eq!(civil_from_days(0), (1970, 1, 1));
         assert_eq!(civil_from_days(19_782), (2024, 2, 29));
 
@@ -571,8 +575,8 @@ mod tests {
         );
         assert_eq!(xdg_videos_dir("XDG_VIDEOS_DIR=\"$HOME/\"", home), None);
         assert_eq!(xdg_videos_dir("", home), None);
-        if std::env::var_os("RUSTYHUSKY_VIDEO_DIR").is_none() {
-            assert!(default_dir().ends_with("RustyHusky"));
+        if config::env("VIDEO_DIR").is_none() {
+            assert!(default_dir().ends_with(APP_NAME));
         }
     }
 

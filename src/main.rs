@@ -1,4 +1,4 @@
-//! RustyHusky: a small starter template for portrait 2D games.
+//! A portrait game built on the RustyHusky starter framework.
 //!
 //! This file owns the window and the frame loop: it reads input, runs the
 //! app at a fixed time step, plays sounds, feeds the recorder and draws.
@@ -7,6 +7,7 @@
 mod app;
 mod audio;
 mod capture;
+mod config;
 mod example;
 mod game;
 mod i18n;
@@ -33,28 +34,10 @@ type ActiveGame = example::ExampleGame;
 /// burst of catch-up steps.
 const MAX_FRAME_TIME: f32 = 0.25;
 
-/// Macroquad key codes for every `ui::Key`.
-const KEYS: [(KeyCode, Key); 14] = [
-    (KeyCode::Up, Key::Up),
-    (KeyCode::Down, Key::Down),
-    (KeyCode::Left, Key::Left),
-    (KeyCode::Right, Key::Right),
-    (KeyCode::W, Key::W),
-    (KeyCode::A, Key::A),
-    (KeyCode::S, Key::S),
-    (KeyCode::D, Key::D),
-    (KeyCode::Z, Key::Z),
-    (KeyCode::X, Key::X),
-    (KeyCode::P, Key::P),
-    (KeyCode::Space, Key::Space),
-    (KeyCode::Enter, Key::Enter),
-    (KeyCode::Escape, Key::Escape),
-];
-
-/// `RUSTYHUSKY_WINDOW=1000x640` forces a window size (e.g. to check
+/// `<ENV_PREFIX>_WINDOW=1000x640` forces a window size (e.g. to check
 /// letterboxing).
 fn forced_window_size() -> Option<(i32, i32)> {
-    let value = std::env::var("RUSTYHUSKY_WINDOW").ok()?;
+    let value = config::env_str("WINDOW")?;
     let (w, h) = value.split_once('x')?;
     Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
 }
@@ -63,7 +46,7 @@ fn window_conf() -> Conf {
     let (width, height) = forced_window_size()
         .unwrap_or_else(|| screen::initial_window_size(screen::detect_work_area()));
     Conf {
-        window_title: "RustyHusky".to_owned(),
+        window_title: config::APP_NAME.to_owned(),
         window_width: width,
         window_height: height,
         window_resizable: true,
@@ -74,15 +57,15 @@ fn window_conf() -> Conf {
 
 /// Collects this frame's input, with the mouse mapped to logical coordinates.
 fn read_input(view: View) -> Input {
-    let mut keys: Vec<Key> = KEYS
+    let mut keys: Vec<Key> = ui::KEYS
         .iter()
-        .filter(|(code, _)| is_key_pressed(*code))
-        .map(|&(_, key)| key)
+        .filter(|(_, code, _)| is_key_pressed(*code))
+        .map(|&(key, _, _)| key)
         .collect();
-    let mut held: Vec<Key> = KEYS
+    let mut held: Vec<Key> = ui::KEYS
         .iter()
-        .filter(|(code, _)| is_key_down(*code))
-        .map(|&(_, key)| key)
+        .filter(|(_, code, _)| is_key_down(*code))
+        .map(|&(key, _, _)| key)
         .collect();
     if is_key_pressed(KeyCode::KpEnter) {
         keys.push(Key::Enter);
@@ -97,10 +80,10 @@ fn read_input(view: View) -> Input {
     }
 }
 
-/// The script from `RUSTYHUSKY_SCRIPT`, if any. A broken script stops the
+/// The script from `<ENV_PREFIX>_SCRIPT`, if any. A broken script stops the
 /// program with a message rather than running unscripted.
 fn load_script() -> Option<script::Script> {
-    let path = std::env::var_os("RUSTYHUSKY_SCRIPT")?;
+    let path = config::env("SCRIPT")?;
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         eprintln!("cannot read script {}: {e}", path.to_string_lossy());
         std::process::exit(2)
@@ -111,9 +94,9 @@ fn load_script() -> Option<script::Script> {
     })
 }
 
-/// Saves the window as `<RUSTYHUSKY_SHOTS or "shots">/<name>.png`.
+/// Saves the window as `<<ENV_PREFIX>_SHOTS or "shots">/<name>.png`.
 fn save_shot(name: &str) {
-    let dir = std::env::var("RUSTYHUSKY_SHOTS").unwrap_or_else(|_| "shots".into());
+    let dir = config::env_str("SHOTS").unwrap_or_else(|| "shots".into());
     if let Err(e) = std::fs::create_dir_all(&dir) {
         eprintln!("cannot create {dir}: {e}");
         return;
@@ -205,8 +188,11 @@ pub(crate) mod tests {
 
     /// A fresh folder for one test under the system temp folder.
     pub fn temp_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("rustyhusky-test-{}-{name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "{}-test-{}-{name}",
+            crate::config::APP_ID,
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }

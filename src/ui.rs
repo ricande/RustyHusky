@@ -2,10 +2,11 @@
 //! coordinates, so input handling and drawing agree on where things are
 //! however the window is sized or letterboxed.
 
+use macroquad::input::KeyCode;
 use macroquad::math::{Rect, Vec2};
 
-/// The keys the program reads. To use another key, add it here, to
-/// `Key::ALL` and to the table in `main.rs`.
+/// The keys the program reads. To use another key, add a variant here and
+/// a row to `KEYS`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
     Up,
@@ -24,47 +25,29 @@ pub enum Key {
     Escape,
 }
 
+/// Every key with its Macroquad key code and its name in scripts.
+pub const KEYS: &[(Key, KeyCode, &str)] = &[
+    (Key::Up, KeyCode::Up, "up"),
+    (Key::Down, KeyCode::Down, "down"),
+    (Key::Left, KeyCode::Left, "left"),
+    (Key::Right, KeyCode::Right, "right"),
+    (Key::W, KeyCode::W, "w"),
+    (Key::A, KeyCode::A, "a"),
+    (Key::S, KeyCode::S, "s"),
+    (Key::D, KeyCode::D, "d"),
+    (Key::Z, KeyCode::Z, "z"),
+    (Key::X, KeyCode::X, "x"),
+    (Key::P, KeyCode::P, "p"),
+    (Key::Space, KeyCode::Space, "space"),
+    (Key::Enter, KeyCode::Enter, "enter"),
+    (Key::Escape, KeyCode::Escape, "esc"),
+];
+
 impl Key {
-    pub const ALL: [Key; 14] = [
-        Key::Up,
-        Key::Down,
-        Key::Left,
-        Key::Right,
-        Key::W,
-        Key::A,
-        Key::S,
-        Key::D,
-        Key::Z,
-        Key::X,
-        Key::P,
-        Key::Space,
-        Key::Enter,
-        Key::Escape,
-    ];
-
-    /// The key's name in scripts: `up`, `space`, `enter`, `esc`, `p` …
-    pub fn name(self) -> &'static str {
-        match self {
-            Key::Up => "up",
-            Key::Down => "down",
-            Key::Left => "left",
-            Key::Right => "right",
-            Key::W => "w",
-            Key::A => "a",
-            Key::S => "s",
-            Key::D => "d",
-            Key::Z => "z",
-            Key::X => "x",
-            Key::P => "p",
-            Key::Space => "space",
-            Key::Enter => "enter",
-            Key::Escape => "esc",
-        }
-    }
-
+    /// A key by its name in scripts: `up`, `space`, `enter`, `esc`, `p` …
     pub fn from_name(name: &str) -> Option<Key> {
         let name = name.to_lowercase();
-        Key::ALL.into_iter().find(|k| k.name() == name)
+        KEYS.iter().find(|(_, _, n)| *n == name).map(|&(k, _, _)| k)
     }
 }
 
@@ -249,9 +232,12 @@ mod tests {
     }
 
     #[test]
-    fn key_names_round_trip() {
-        for k in Key::ALL {
-            assert_eq!(Key::from_name(k.name()), Some(k));
+    fn key_table_is_unique() {
+        for (i, &(key, code, name)) in KEYS.iter().enumerate() {
+            assert_eq!(Key::from_name(name), Some(key));
+            for &(k, c, n) in &KEYS[i + 1..] {
+                assert!(k != key && c != code && n != name, "{name} twice");
+            }
         }
         assert_eq!(Key::from_name("ESC"), Some(Key::Escape));
         assert_eq!(Key::from_name("hyper"), None);

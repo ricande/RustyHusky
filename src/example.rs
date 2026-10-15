@@ -7,6 +7,7 @@ use macroquad::math::{vec2, Rect};
 
 use crate::audio::Sfx;
 use crate::game::{Game, RoundResult};
+use crate::i18n::Text;
 use crate::t;
 use crate::ui::{Input, Key};
 use crate::view::{draw_button, with_alpha, View, ACCENT, FIELD_W, NEON, TEXT};
@@ -24,6 +25,24 @@ pub const FINISH_BUTTON: Rect = Rect {
 const ORBIT_CENTRE: (f32, f32) = (FIELD_W / 2.0, 470.0);
 const ORBIT_R: f32 = 120.0;
 
+/// The example's texts; see `Game::TEXTS`.
+const TEXTS: &[Text] = &[
+    (
+        "menu.subtitle",
+        "Build. Play. Record. Share.",
+        "Bygg. Spela. Spela in. Dela.",
+    ),
+    ("example.title", "Your game here", "Ditt spel här"),
+    ("example.level", "Level {level}", "Nivå {level}"),
+    ("example.score", "Score {score}", "Poäng {score}"),
+    ("example.finish", "Finish level", "Avsluta nivån"),
+    (
+        "example.help",
+        "Space: +1 point   Enter: finish level   Esc: pause",
+        "Mellanslag: +1 poäng   Enter: avsluta nivån   Esc: paus",
+    ),
+];
+
 pub struct ExampleGame {
     level: u32,
     /// Game time in seconds, advanced only by `update`.
@@ -34,6 +53,8 @@ pub struct ExampleGame {
 }
 
 impl Game for ExampleGame {
+    const TEXTS: &'static [Text] = TEXTS;
+
     fn new(level: u32) -> Self {
         ExampleGame {
             level,

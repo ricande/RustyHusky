@@ -6,7 +6,25 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `src/config.rs`: the project's name (`APP_NAME`), id (`APP_ID`) and
+  environment variable prefix (`ENV_PREFIX`) in one place. Window title,
+  menu title, data and video folders, file names and environment variables
+  follow them.
+- `Game::TEXTS`: a game brings its own translations; `i18n.rs` holds only
+  the framework's. The menu subtitle (`menu.subtitle`) belongs to the game;
+  the example's is "Build. Play. Record. Share.".
+- Script commands `hold <key>` and `release <key>` for held keys.
+- GitHub Actions CI: fmt, clippy and tests (with FFmpeg, so the video tests
+  run), and a build with the minimum Rust version 1.82, now declared as
+  `rust-version` in `Cargo.toml`.
+- A screenshot in the README.
+
 ### Changed
+
+- Keys are defined in one table, `ui::KEYS` (key, key code, script name),
+  instead of four places.
 
 - **License:** RustyHusky is now licensed under GPL-3.0-or-later instead of
   MIT. `LICENSE` holds the full GPLv3 text and `Cargo.toml` says

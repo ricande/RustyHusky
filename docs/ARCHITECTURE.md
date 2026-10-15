@@ -25,14 +25,15 @@ it and how recording works. For the current game's behaviour, see
 | Module        | Window-free | Responsibility |
 | ------------- | :---------: | -------------- |
 | `main.rs`     |   | Window setup, the frame loop, Macroquad input → `ui::Input`, `ActiveGame`. |
+| `config.rs`   | ✓ | The project's name, id and environment variable prefix. |
 | `game.rs`     | ✓ | The `Game` trait, `RoundResult`, `FIXED_DT`. |
 | `example.rs`  | ✓¹ | The placeholder game ("Your game here"). Replace it. |
 | `app.rs`      | ✓ | Screens (`Menu`, `Settings`, `Playing`, `Results`), transitions, button layouts, `VideoStatus`. |
 | `screens.rs`  |   | Draws the screens, the pause menu and the REC marker. |
 | `view.rs`     | ✓² | `View` (logical ↔ pixels), colours, drawing helpers, buttons. |
-| `ui.rs`       | ✓ | `Input`, `Key`, `Button`, button layout and keyboard/mouse choice. |
+| `ui.rs`       | ✓ | `Input`, `Key` and the `KEYS` table (key code, script name), `Button`, button layout and keyboard/mouse choice. |
 | `settings.rs` | ✓ | `settings.json`: language, volume, recording; the data folder. |
-| `i18n.rs`     | ✓ | The translation catalog and the `t!` macro. |
+| `i18n.rs`     | ✓ | The framework's translation catalog, lookup in it and the game's `TEXTS`, the `t!` macro. |
 | `audio.rs`    |   | The synthesizer (window-free) and playback with the volume setting. |
 | `video.rs`    | ✓³ | FFmpeg process, frame clock, sound mixing, saving, file names. |
 | `capture.rs`  |   | Renders video frames off screen and drives a round's recording. |
@@ -152,7 +153,11 @@ translated `VideoStatus` messages.
 
 ## Translations
 
-- `i18n.rs` holds `CATALOG`: `(key, English, Swedish)` for every text.
+- Texts are `(key, English, Swedish)`. The framework's are in `CATALOG` in
+  `i18n.rs`; the game's are in `Game::TEXTS` of `ActiveGame`, so a new game
+  brings its own texts without editing `i18n.rs`. Lookup searches both; a
+  key must be unique across them. The game must define `menu.subtitle`.
+  The menu title is `config::APP_NAME`, a name that is not translated.
 - `t!("key")` returns the text in the current language; `t!("key", name = v)`
   fills `{name}` placeholders.
 - The language is thread-local. `main.rs` sets it from the settings (or
@@ -160,7 +165,7 @@ translated `VideoStatus` messages.
 - Tests check that every `t!` key used in the source exists, that keys are
   unique and that both languages have the same placeholders.
 - To add a language: add a `Lang` variant (with `code`, `next`), a column to
-  `CATALOG` and the match in `tr_in`.
+  `CATALOG`, to every game's `TEXTS` and the match in `tr_in`.
 
 ## Persistence
 

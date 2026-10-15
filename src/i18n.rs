@@ -1,8 +1,10 @@
 //! Translations. English is the default; Swedish can be chosen in the settings.
 //!
-//! Every text shown to the player lives in `CATALOG` as (key, English,
-//! Swedish). Code refers to texts by key with the `t!` macro, which fills
-//! in named placeholders: `t!("results.score", score = 120)`.
+//! Every text shown to the player lives in a catalog of (key, English,
+//! Swedish): the framework's texts in `CATALOG` below, the game's in
+//! `Game::TEXTS` of the active game, so a game brings its own texts and this
+//! file does not change. Code refers to texts by key with the `t!` macro,
+//! which fills in named placeholders: `t!("results.score", score = 120)`.
 //!
 //! The language is kept per thread (the game runs on one thread); a worker
 //! thread that produces texts copies the language when it is started.
@@ -67,7 +69,7 @@ pub fn tr(key: &str) -> &'static str {
 /// release builds the key itself is shown rather than crashing the game.
 pub fn tr_in(lang: Lang, key: &str) -> &'static str {
     static INDEX: OnceLock<HashMap<&'static str, (&'static str, &'static str)>> = OnceLock::new();
-    let index = INDEX.get_or_init(|| CATALOG.iter().map(|&(k, en, sv)| (k, (en, sv))).collect());
+    let index = INDEX.get_or_init(|| all_texts().map(|&(k, en, sv)| (k, (en, sv))).collect());
     match index.get(key) {
         Some(&(en, sv)) => match lang {
             Lang::En => en,
@@ -105,11 +107,19 @@ macro_rules! t {
 }
 
 /// (key, English, Swedish)
-const CATALOG: &[(&str, &str, &str)] = &[
+pub type Text = (&'static str, &'static str, &'static str);
+
+/// The framework's texts followed by the active game's.
+fn all_texts() -> impl Iterator<Item = &'static Text> {
+    CATALOG
+        .iter()
+        .chain(<crate::ActiveGame as crate::game::Game>::TEXTS)
+}
+
+/// The framework's texts. The game's texts are in its `Game::TEXTS`.
+const CATALOG: &[Text] = &[
     ("missing", "?", "?"),
     // Main menu
-    ("app.title", "RUSTYHUSKY", "RUSTYHUSKY"),
-    ("menu.subtitle", "A starter template for games in Rust", "En startmall för spel i Rust"),
     ("menu.play", "Play", "Spela"),
     ("menu.settings", "Settings", "Inställningar"),
     ("menu.quit", "Quit", "Avsluta"),
@@ -163,12 +173,6 @@ const CATALOG: &[(&str, &str, &str)] = &[
     ("video.mkdir", "could not create the folder {path}: {error}", "kunde inte skapa mappen {path}: {error}"),
     ("video.write_sound", "could not write the sound: {error}", "kunde inte skriva ljudet: {error}"),
     ("video.write_file", "could not save {path}: {error}", "kunde inte spara {path}: {error}"),
-    // The example game
-    ("example.title", "Your game here", "Ditt spel här"),
-    ("example.level", "Level {level}", "Nivå {level}"),
-    ("example.score", "Score {score}", "Poäng {score}"),
-    ("example.finish", "Finish level", "Avsluta nivån"),
-    ("example.help", "Space: +1 point   Enter: finish level   Esc: pause", "Mellanslag: +1 poäng   Enter: avsluta nivån   Esc: paus"),
 ];
 
 #[cfg(test)]
@@ -195,7 +199,7 @@ mod tests {
     #[test]
     fn catalog_is_complete_and_consistent() {
         let mut keys = BTreeSet::new();
-        for &(key, en, sv) in CATALOG {
+        for &(key, en, sv) in all_texts() {
             assert!(keys.insert(key), "duplicate key {key}");
             assert!(!en.is_empty() && !sv.is_empty(), "{key} is empty");
             assert_eq!(
@@ -233,7 +237,7 @@ mod tests {
             "found only {} source files",
             sources.len()
         );
-        let known: BTreeSet<&str> = CATALOG.iter().map(|&(k, _, _)| k).collect();
+        let known: BTreeSet<&str> = all_texts().map(|&(k, _, _)| k).collect();
         let mut used = 0;
         for src in &sources {
             let mut rest = src.as_str();

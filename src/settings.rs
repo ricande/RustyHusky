@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::{self, APP_ID, APP_NAME};
 use crate::i18n::Lang;
 use crate::t;
 
@@ -45,37 +46,37 @@ impl Settings {
     }
 }
 
-/// The program's data folder (overridable with `RUSTYHUSKY_DATA_DIR`).
+/// The program's data folder (overridable with `<ENV_PREFIX>_DATA_DIR`).
 pub fn data_dir() -> PathBuf {
     let env = |key: &str| std::env::var_os(key).filter(|v| !v.is_empty());
-    if let Some(dir) = env("RUSTYHUSKY_DATA_DIR") {
+    if let Some(dir) = config::env("DATA_DIR") {
         return PathBuf::from(dir);
     }
     if cfg!(windows) {
         if let Some(appdata) = env("APPDATA") {
-            return PathBuf::from(appdata).join("RustyHusky");
+            return PathBuf::from(appdata).join(APP_NAME);
         }
     } else if cfg!(target_os = "macos") {
         if let Some(home) = env("HOME") {
-            return PathBuf::from(home).join("Library/Application Support/RustyHusky");
+            return PathBuf::from(home)
+                .join("Library/Application Support")
+                .join(APP_NAME);
         }
     } else if let Some(data) = env("XDG_DATA_HOME") {
-        return PathBuf::from(data).join("rustyhusky");
+        return PathBuf::from(data).join(APP_ID);
     } else if let Some(home) = env("HOME") {
-        return PathBuf::from(home).join(".local/share/rustyhusky");
+        return PathBuf::from(home).join(".local/share").join(APP_ID);
     }
-    PathBuf::from("rustyhusky-data")
+    PathBuf::from(format!("{APP_ID}-data"))
 }
 
 pub fn default_path() -> PathBuf {
     data_dir().join("settings.json")
 }
 
-/// `RUSTYHUSKY_LANG`, which overrides the saved language for this run.
+/// `<ENV_PREFIX>_LANG`, which overrides the saved language for this run.
 pub fn env_lang() -> Option<Lang> {
-    std::env::var("RUSTYHUSKY_LANG")
-        .ok()
-        .and_then(|code| Lang::from_code(&code))
+    config::env_str("LANG").and_then(|code| Lang::from_code(&code))
 }
 
 /// The saved settings. A missing or broken file gives the defaults, and

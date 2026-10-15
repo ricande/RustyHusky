@@ -6,6 +6,7 @@
 //! else has to change. See `example.rs` for a minimal implementation.
 
 use crate::audio::Sfx;
+use crate::i18n::Text;
 use crate::ui::Input;
 use crate::view::View;
 
@@ -19,6 +20,11 @@ pub struct RoundResult {
 }
 
 pub trait Game {
+    /// The game's own translations, (key, English, Swedish), searched by
+    /// `t!` together with the framework's. Must include `menu.subtitle`,
+    /// the line under the title in the main menu.
+    const TEXTS: &'static [Text];
+
     /// A new round. `level` is 1 for the first round after the main menu and
     /// grows by one for each "Next round".
     fn new(level: u32) -> Self

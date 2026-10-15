@@ -1,5 +1,7 @@
 # RustyHusky
 
+[![CI](https://github.com/ricande/RustyHusky/actions/workflows/ci.yml/badge.svg)](https://github.com/ricande/RustyHusky/actions/workflows/ci.yml)
+
 **Build. Play. Record. Share.**
 
 RustyHusky is a Rust starter framework for creating portrait games and
@@ -19,6 +21,11 @@ TikTok, and Instagram Reels. Build a game, play it, record it, and share it.
   game module.
 - **English by default, with i18n support** – all texts go through one
   translation catalog; Swedish is included.
+
+![Main menu, a round with the REC marker, the pause menu and the results with Save video / Discard video](docs/images/screens.png)
+
+*Main menu, the placeholder game while recording, the pause menu (never part
+of the video) and the results with Save video / Discard video.*
 
 RustyHusky creates video files that you publish yourself. It does not upload
 anything to social media platforms.
@@ -118,8 +125,13 @@ When recording is on and FFmpeg is available, every round is recorded:
 
 ## Building your own game
 
-1. Create a module, e.g. `src/mygame.rs`, with a type that implements
+1. Name your project in `src/config.rs` (`APP_NAME`, `APP_ID`,
+   `ENV_PREFIX`) and in `Cargo.toml`. The window title, menu title, data and
+   video folders, file names and environment variables follow.
+2. Create a module, e.g. `src/mygame.rs`, with a type that implements
    `game::Game` (see `src/game.rs` and the example in `src/example.rs`):
+   - `TEXTS` – the game's own texts as (key, English, Swedish); must include
+     `menu.subtitle`, the line under the title in the main menu
    - `new(level)` – start a round (level 1, 2, 3 … with "Next round")
    - `handle(&Input)` – once per frame: pressed and held keys, mouse position
      and clicks, all in logical coordinates (Esc/P are taken for pausing)
@@ -127,20 +139,23 @@ When recording is on and FFmpeg is available, every round is recorded:
    - `draw(&View)` – draw in logical 540 × 960 coordinates through `View`
    - `take_sounds()` – sound effects started since the last call
    - `finished()` – `Some(RoundResult { score })` when the level is done
-2. Add `mod mygame;` and set `type ActiveGame = mygame::MyGame;` in
+3. Add `mod mygame;` and set `type ActiveGame = mygame::MyGame;` in
    `src/main.rs`.
-3. Put every text the player sees in the catalog in `src/i18n.rs` (English
-   and Swedish) and use `t!("key")`.
-4. Add sounds to `audio::Sfx` and keys to `ui::Key` (plus the table in
-   `main.rs`) if you need more.
-5. Delete `src/example.rs` and describe your rules in
+4. Show every text through `t!("key")` with the key in your `TEXTS`.
+   `cargo test` fails if a key is missing or the languages' placeholders
+   differ.
+5. Need another key? Add a variant to `ui::Key` and one row to `ui::KEYS`.
+   Another sound? Add it to `audio::Sfx`, `ALL` and `recipe`.
+6. Delete `src/example.rs` and describe your rules in
    [docs/GAME_RULES.md](docs/GAME_RULES.md).
 
-Menus, settings, pause, results, scaling and recording need no changes.
+Menus, settings, pause, results, scaling, recording and translations of the
+framework's texts need no changes.
 
 ## Environment variables
 
-Handy for testing without touching your real settings and videos:
+Handy for testing without touching your real settings and videos. The
+prefix is `config::ENV_PREFIX` (`RUSTYHUSKY` here):
 
 | Variable               | Effect                                            |
 | ---------------------- | ------------------------------------------------- |

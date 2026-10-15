@@ -79,7 +79,8 @@ fn draw_buttons<A>(v: &View, buttons: &[Button<A>], focus: usize, pointer: Optio
 fn draw_menu<G>(app: &App<G>, v: &View, pointer: Option<Vec2>) {
     draw_background(v);
     let cx = FIELD_W / 2.0;
-    v.text_centered(t!("app.title"), cx, 360.0, 76.0, ACCENT);
+    let title = crate::config::APP_NAME.to_uppercase();
+    v.text_centered(&title, cx, 360.0, 76.0, ACCENT);
     v.text_centered(t!("menu.subtitle"), cx, 410.0, 24.0, NEON);
     draw_buttons(v, &menu_buttons(), app.focus, pointer);
     v.text_centered(t!("menu.help"), cx, 920.0, 18.0, with_alpha(TEXT, 0.6));

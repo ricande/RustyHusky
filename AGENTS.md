@@ -25,6 +25,10 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
+GitHub Actions (`.github/workflows/ci.yml`) runs the same checks on every
+push and pull request, with FFmpeg installed so the video tests run, and
+builds with the minimum Rust version, 1.82 (`rust-version` in `Cargo.toml`).
+
 Run with `cargo run --release`. If `cargo` is not on `PATH`, it is in
 `~/.cargo/bin`.
 
@@ -47,19 +51,23 @@ Run with `cargo run --release`. If `cargo` is not on `PATH`, it is in
 5. **Use the fixed time step.** Game logic advances only in `Game::update`
    with `FIXED_DT`; do not read the clock in game code, or the video will not
    match what was played.
-6. **Every player-visible text goes through `t!`.** Add the key to `CATALOG`
-   in `src/i18n.rs` with English and Swedish, using the same named
+6. **Every player-visible text goes through `t!`.** Framework texts belong
+   in `CATALOG` in `src/i18n.rs`, the game's texts in its `Game::TEXTS`; both
+   with English and Swedish, using the same named
    placeholders. Code, comments, docs and commit messages are in English.
-7. **Recording must never break the game.** FFmpeg may be missing, fail or
+7. **Names live in `config.rs`.** Never hard-code the project name, folder
+   names, file name prefixes or environment variable names; use
+   `config::APP_NAME`, `APP_ID` and `config::env("NAME")`.
+8. **Recording must never break the game.** FFmpeg may be missing, fail or
    hang; every such case ends in a `VideoStatus` message, never a panic or a
    frozen screen. Slow work stays on worker threads. Temporary files are
    always removed (Discard, leaving the results, closing the program).
-8. **Test what you add.** Flow changes get tests in `app.rs`, using the
+9. **Test what you add.** Flow changes get tests in `app.rs`, using the
    example game. Tests that use files use `crate::tests::temp_dir`, never the
    user's folders. Tests run in parallel threads; the language is
    thread-local, so change it only on a thread you spawn yourself. Do not set
    environment variables in tests.
-9. **Update the docs with the code.** Structure → `docs/ARCHITECTURE.md`;
+10. **Update the docs with the code.** Structure → `docs/ARCHITECTURE.md`;
    game behaviour → `docs/GAME_RULES.md`; user-facing behaviour →
    `README.md`; notable changes → `CHANGELOG.md` under *Unreleased*.
 
@@ -80,6 +88,8 @@ cargo run --release
   results with Save video, the next round, abort and Discard video, and saves
   numbered screenshots. The command language is at the top of
   `src/script.rs`.
+- Scripts can also hold keys (`hold left` … `release left`), for games
+  with movement.
 - `scripts/window_check.txt` with `RUSTYHUSKY_WINDOW=1000x640` checks
   letterboxing and the mouse conversion (its clicks are window pixels).
   Run it with `RUSTYHUSKY_LANG=sv` to check Swedish too.
