@@ -37,8 +37,9 @@ between runs, a fixed simulation time step, and a placeholder game that shows
 
 The framework grew out of [RustOut](https://github.com/ricande/RustOut), a
 Breakout-style game; its general parts were kept and the Breakout parts
-removed. All graphics are drawn in code and the sounds are synthesized at
-startup, so there are no asset files.
+removed. The framework draws everything in code and synthesizes its sounds;
+a game's images and sounds in `assets/` are built into the program, so it
+needs no files at run time.
 
 ## Requirements
 
@@ -73,7 +74,7 @@ cargo test
 | Menus    | Mouse, or ↑/↓ and Enter (Space also chooses). Esc goes back. |
 | Settings | ←/→ change the focused setting; click the left or right half of the volume button to lower or raise it. |
 | Round    | Esc or P pauses. In the pause menu: Resume (also Esc/P) or Abort round. |
-| Example  | Space: +1 point. Enter or the **Finish level** button: finish the level. |
+| Example  | Space: +1 point (every fifth plays the game's own sound). Enter or the **Finish level** button: finish the level. |
 
 Flow: **main menu → round → results → next round or main menu**. An aborted
 round also ends on the results screen (without "Next round").

@@ -9,11 +9,12 @@ current game's rules are in [docs/GAME_RULES.md](docs/GAME_RULES.md).
 RustyHusky is a Rust starter framework for portrait games with automatic
 gameplay recording (for YouTube Shorts, TikTok, Instagram Reels), built with
 Macroquad: a logical 540 × 960 view scaled to the window, main menu,
-settings (language, volume, recording), pause and results screens,
+settings (language, volume, recording mode), pause and results screens,
 English/Swedish translations and automatic MP4 recording of each round via
 FFmpeg. The game itself is a replaceable module behind the `game::Game`
-trait; `example.rs` is a placeholder. It is a single binary crate with no
-asset files.
+trait; `example.rs` is a placeholder. It is a single binary crate; images
+and sounds in `assets/` are embedded with `include_bytes!`. A new game is
+named with `scripts/new-game.sh` (see docs/NEW_GAME.md).
 
 ## Commands
 
@@ -26,7 +27,9 @@ cargo test
 ```
 
 GitHub Actions (`.github/workflows/ci.yml`) runs the same checks on every
-push and pull request, with FFmpeg installed so the video tests run, and
+push and pull request on Linux, and clippy and the tests on Windows and
+macOS, all with FFmpeg installed and `REQUIRE_FFMPEG=1`, so a test that needs
+FFmpeg fails instead of skipping. It also checks the vendored miniquad and
 builds with the minimum Rust version, 1.87 (`rust-version` in `Cargo.toml`).
 
 Run with `cargo run --release`. If `cargo` is not on `PATH`, it is in
@@ -41,7 +44,8 @@ Run with `cargo run --release`. If `cargo` is not on `PATH`, it is in
    behind `game::Game`. Menus (`app.rs`, `screens.rs`) and recording
    (`capture.rs`, `video.rs`) must not know about a particular game.
 3. **Keep logic window-free.** `app.rs`, `game.rs`, game logic, `settings.rs`,
-   `i18n.rs`, `ui.rs`, `video.rs` and `script.rs` must not call Macroquad's
+   `config.rs`, `i18n.rs`, `ui.rs`, `video.rs`, `pacing.rs` and `script.rs`
+   must not call Macroquad's
    window, graphics, input or audio APIs, so they are tested headlessly. Only
    `main.rs`, `view.rs` (drawing helpers), `screens.rs`, `capture.rs`, the
    playback part of `audio.rs` and a game's `draw` talk to Macroquad.

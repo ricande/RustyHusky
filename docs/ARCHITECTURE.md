@@ -17,8 +17,9 @@ it and how recording works. For the current game's behaviour, see
    Only `view::View` knows about real pixels.
 4. **Fixed time step.** Game logic advances in steps of `FIXED_DT` = 1/120 s,
    so behaviour does not depend on the frame rate.
-5. **No asset files.** Graphics are drawn with shapes and text; sounds are
-   synthesized at startup.
+5. **No files at run time.** The framework draws with shapes and text and
+   synthesizes its sounds; a game's images and WAV files in `assets/` are
+   embedded with `include_bytes!` (`View::image`, `Game::SOUNDS`).
 
 ## Modules
 
@@ -26,15 +27,15 @@ it and how recording works. For the current game's behaviour, see
 | ------------- | :---------: | -------------- |
 | `main.rs`     |   | Window setup, the frame loop, Macroquad input → `ui::Input`, `ActiveGame`. |
 | `config.rs`   | ✓ | The project's name, id and environment variable prefix. |
-| `game.rs`     | ✓ | The `Game` trait, `RoundResult`, `FIXED_DT`. |
-| `example.rs`  | ✓¹ | The placeholder game ("Your game here"). Replace it. |
+| `game.rs`     | ✓ | The `Game` trait (with the game's `TEXTS` and `SOUNDS`), `RoundResult`, `FIXED_DT`. |
+| `example.rs`  | ✓¹ | The placeholder game ("Your game here", an image, its own sound, hover). Replace it. |
 | `app.rs`      | ✓ | Screens (`Menu`, `Settings`, `Playing`, `Results`), transitions, button layouts, `VideoStatus`. |
-| `screens.rs`  |   | Draws the screens, the pause menu and the REC marker. |
-| `view.rs`     | ✓² | `View` (logical ↔ pixels), colours, drawing helpers, buttons. |
+| `screens.rs`  |   | Draws the screens, the pause menu and the REC marker with the recording's length (window only). |
+| `view.rs`     | ✓² | `View` (logical ↔ pixels), colours, drawing helpers including embedded images (`image`), buttons. |
 | `ui.rs`       | ✓ | `Input`, `Key` and the `KEYS` table (key code, script name), `Button`, button layout and keyboard/mouse choice. |
-| `settings.rs` | ✓ | `settings.json`: language, volume, recording; the data folder. |
+| `settings.rs` | ✓ | `settings.json`: language, volume, recording mode (with migration of the old on/off); the data folder. |
 | `i18n.rs`     | ✓ | The framework's translation catalog, lookup in it and the game's `TEXTS`, the `t!` macro. |
-| `audio.rs`    |   | The synthesizer (window-free) and playback with the volume setting. |
+| `audio.rs`    |   | The synthesizer and the WAV decoder for the game's sounds (window-free), and playback with the volume setting. |
 | `video.rs`    | ✓³ | FFmpeg process, frame clock, sound mixing, saving, file names. |
 | `capture.rs`  |   | Renders video frames off screen and drives a round's recording in either recording mode. |
 | `pacing.rs`   | ✓ | `Lockstep`: the "Prioritize recording" timing, two physics steps per produced video frame. |
@@ -263,8 +264,11 @@ fields get defaults.
 ## Testing
 
 - `cargo test` runs the flow (menu → round → results → next round / menu,
-  pause, abort, Save/Discard requests, busy states), settings, translations,
-  the view mapping, buttons, scripts, sounds and the real video pipeline
-  (1080 × 1920, 60 fps, sound, failure cases) when ffmpeg is installed.
+  pause, abort, Save/Discard requests, busy states), settings and their
+  migration, translations, the view mapping, buttons, scripts, sounds and WAV
+  decoding, the "Prioritize recording" pacing with fake encoders, and the
+  real video pipeline (1080 × 1920, 60 fps, sound, failure cases) when
+  ffmpeg is installed. With `REQUIRE_FFMPEG` set (as in CI on Linux, Windows
+  and macOS) a missing ffmpeg fails those tests instead of skipping them.
 - Drawing and `capture.rs` are checked by running the real binary in script
   mode (see [AGENTS.md](../AGENTS.md)).

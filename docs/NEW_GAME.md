@@ -71,7 +71,7 @@ Use `macroquad::rand` (`rand::gen_range(0, 10)` …) and seed it at the start
 of a round, for example `rand::srand(level as u64)` in `new`. The same seed
 and the same input then give the same round, which helps when testing with
 scripts. Draw random numbers in `handle`/`update`, never in `draw` (it runs
-twice per frame while recording).
+more than once per frame while recording).
 
 ## Images
 
