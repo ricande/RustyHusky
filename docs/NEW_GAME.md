@@ -27,7 +27,7 @@ Copy `src/example.rs` to `src/my_game.rs`, add `mod my_game;` and set
 | `new(level)` | Set up a round. `level` is 1, 2, 3 … with "Next round". |
 | `handle(&Input)` | Read input: `input.key(k)` for presses, `input.held(k)` for movement, `input.pointer`/`input.clicked(rect)` for the mouse. Called once per simulation step with all input since the last one. |
 | `update(dt)` | Move things. `dt` is always 1/120 s. |
-| `draw(&View)` | Draw through `view` (`rect`, `circle`, `line`, `text`, `text_centered` …) in logical 540 × 960 coordinates. Must not change the game. |
+| `draw(&View)` | Draw through `view` (`rect`, `circle`, `line`, `text`, `text_centered`, `image` …) in logical 540 × 960 coordinates. Must not change the game. |
 | `take_sounds()` | Return the sounds started since the last call. |
 | `finished()` | `Some(RoundResult { score })` when the level is over. |
 
@@ -59,8 +59,15 @@ Play a round, save the video and check it with
 (expect `1080,1920,60/1`). AGENTS.md describes script mode for repeatable
 checks with screenshots.
 
+## Images
+
+Put image files in `assets/` and draw them with
+`view.image(include_bytes!("../assets/hero.png"), x, y, w, h, WHITE)`. The
+file is built into the program, loaded on first use and scaled like
+everything else, so it looks the same in the window and in the video. The
+example game draws `assets/paw.png` this way. Record where each asset comes
+from and its license in `THIRD_PARTY_NOTICES.md`.
+
 ## Not in the template yet
 
-Drawing images, sound files and music, saved high scores. Images can be
-drawn with Macroquad directly, but they will not be scaled into the video
-correctly until `View` gets a helper for them.
+Sound files and music, saved high scores.

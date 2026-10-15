@@ -3,6 +3,7 @@
 //! next round) can be tried. Replace this module with your own game; see
 //! `game.rs` for the interface and `docs/GAME_RULES.md` for its behaviour.
 
+use macroquad::color::WHITE;
 use macroquad::math::{vec2, Rect};
 
 use crate::audio::Sfx;
@@ -24,6 +25,10 @@ pub const FINISH_BUTTON: Rect = Rect {
 /// that the recording is smooth).
 const ORBIT_CENTRE: (f32, f32) = (FIELD_W / 2.0, 470.0);
 const ORBIT_R: f32 = 120.0;
+
+/// An example image, drawn in the middle of the orbit.
+const PAW: &[u8] = include_bytes!("../assets/paw.png");
+const PAW_SIZE: f32 = 96.0;
 
 /// The example's texts; see `Game::TEXTS`.
 const TEXTS: &[Text] = &[
@@ -92,6 +97,9 @@ impl Game for ExampleGame {
 
         let (ox, oy) = ORBIT_CENTRE;
         v.circle(vec2(ox, oy), ORBIT_R, with_alpha(NEON, 0.06));
+        // An image from assets/, embedded in the program.
+        let paw = PAW_SIZE;
+        v.image(PAW, ox - paw / 2.0, oy - paw / 2.0, paw, paw, WHITE);
         let angle = self.time * std::f32::consts::TAU / 3.0;
         let dot = vec2(ox + ORBIT_R * angle.cos(), oy + ORBIT_R * angle.sin());
         v.circle(dot, 16.0, with_alpha(ACCENT, 0.3));

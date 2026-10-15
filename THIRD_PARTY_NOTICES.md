@@ -44,6 +44,11 @@ crates.io (`MIT OR Apache-2.0`, © the miniquad authors; see its
 RustyHusky and offered upstream under the same terms. It is not relicensed;
 see [docs/UPSTREAM_FIXES.md](docs/UPSTREAM_FIXES.md).
 
+## Assets
+
+`assets/paw.png` was drawn for RustyHusky (generated with ImageMagick) and
+is covered by the project's license, GPL-3.0-or-later.
+
 ## FFmpeg
 
 Video recording runs the `ffmpeg` program installed on the user's system as

@@ -178,7 +178,8 @@ the rest. In short:
    - `handle(&Input)` – once per frame: pressed and held keys, mouse position
      and clicks, all in logical coordinates (Esc/P are taken for pausing)
    - `update(dt)` – game logic with the fixed step `FIXED_DT` (1/120 s)
-   - `draw(&View)` – draw in logical 540 × 960 coordinates through `View`
+   - `draw(&View)` – draw in logical 540 × 960 coordinates through `View`,
+     including images from `assets/` with `View::image`
    - `take_sounds()` – sound effects started since the last call
    - `finished()` – `Some(RoundResult { score })` when the level is done
 3. Add `mod mygame;` and set `type ActiveGame = mygame::MyGame;` in

@@ -107,6 +107,34 @@ impl View {
         );
     }
 
+    /// Draws an image file (PNG, JPEG …) into the logical rectangle `x`, `y`,
+    /// `w`, `h`, tinted by `color` (`WHITE` keeps its colours). `bytes` is the
+    /// file, usually `include_bytes!("../assets/…")`, so the game needs no
+    /// files at run time. The texture is made on first use (it needs the
+    /// window) and kept; an invalid file is a programming error and panics.
+    pub fn image(&self, bytes: &'static [u8], x: f32, y: f32, w: f32, h: f32, color: Color) {
+        thread_local! {
+            static TEXTURES: std::cell::RefCell<std::collections::HashMap<usize, Texture2D>> =
+                Default::default();
+        }
+        let texture = TEXTURES.with(|t| {
+            t.borrow_mut()
+                .entry(bytes.as_ptr() as usize)
+                .or_insert_with(|| {
+                    let texture = Texture2D::from_file_with_format(bytes, None);
+                    texture.set_filter(FilterMode::Linear);
+                    texture
+                })
+                .clone()
+        });
+        let s = self.scale;
+        let params = DrawTextureParams {
+            dest_size: Some(vec2(w * s, h * s)),
+            ..Default::default()
+        };
+        draw_texture_ex(&texture, self.ox + x * s, self.oy + y * s, color, params);
+    }
+
     /// Width of `text` at `size`, in logical units.
     pub fn text_width(&self, text: &str, size: f32) -> f32 {
         let px = (size * self.scale).round().max(1.0) as u16;
