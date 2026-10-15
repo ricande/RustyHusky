@@ -15,8 +15,8 @@ use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -27,9 +27,18 @@ use crate::t;
 pub const WIDTH: u32 = 1080;
 pub const HEIGHT: u32 = 1920;
 pub const FPS: u32 = 60;
-/// Longest wait for ffmpeg to finish a file before it is stopped, so a
-/// stuck encoder can never lock the game.
-const FFMPEG_TIMEOUT: Duration = Duration::from_secs(60);
+/// Frames waiting for the encoder (8 MB each). Bounded, so a slow encoder
+/// cannot use up memory.
+const QUEUE_FRAMES: usize = 4;
+/// If the queue takes no frame for this long, the encoder counts as hung
+/// and is stopped. This is the longest the game can ever wait for it.
+const STALL_TIMEOUT: Duration = Duration::from_secs(3);
+/// Longest wait for ffmpeg to finish or save a file (on a worker thread).
+const FINISH_TIMEOUT: Duration = Duration::from_secs(60);
+/// Longest wait for the ffmpeg check at startup.
+const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long to wait for a pipe thread after its process has ended.
+const PIPE_GRACE: Duration = Duration::from_secs(1);
 
 /// Decides how many video frames are due as recording time passes, so the
 /// video runs at exactly `FPS` whatever the monitor's refresh rate is.
@@ -107,20 +116,22 @@ fn ffmpeg() -> Command {
 /// Checks that ffmpeg can be started and has the H.264 encoder. The error
 /// is a player-readable reason.
 pub fn check_ffmpeg() -> Result<(), String> {
-    let out = Command::new(ffmpeg_program())
-        .args(["-hide_banner", "-encoders"])
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output();
-    match out {
-        Ok(out) if out.status.success() => {
-            if String::from_utf8_lossy(&out.stdout).contains("libx264") {
-                Ok(())
-            } else {
-                Err(t!("video.no_x264").into())
-            }
-        }
-        _ => Err(t!("video.no_ffmpeg").into()),
+    let mut cmd = Command::new(ffmpeg_program());
+    cmd.args(["-hide_banner", "-encoders"]);
+    check_encoders(cmd, CHECK_TIMEOUT)
+}
+
+/// Runs `cmd` (an `ffmpeg -encoders`) and looks for libx264 in its output.
+fn check_encoders(mut cmd: Command, timeout: Duration) -> Result<(), String> {
+    cmd.stdin(Stdio::null());
+    let Ok(mut process) = Process::spawn(cmd) else {
+        return Err(t!("video.no_ffmpeg").into());
+    };
+    match process.wait(timeout, &SHUTDOWN) {
+        Ok(exit) if exit.status.success() && exit.stdout.contains("libx264") => Ok(()),
+        Ok(exit) if exit.status.success() => Err(t!("video.no_x264").into()),
+        Ok(_) => Err(t!("video.no_ffmpeg").into()),
+        Err(_) => Err(t!("video.no_answer").into()),
     }
 }
 
@@ -156,52 +167,136 @@ pub fn remove_old_temp_files() {
     }
 }
 
-/// Waits for `child` to exit, killing it after `FFMPEG_TIMEOUT`. Returns
-/// the exit status and what it wrote to stderr.
-fn wait_for(child: &mut Child) -> Result<(ExitStatus, String), String> {
-    let deadline = Instant::now() + FFMPEG_TIMEOUT;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(t!("video.ffmpeg_timeout").into());
-            }
-            Err(e) => return Err(t!("video.ffmpeg_failed", error = e)),
+/// Set when the program closes: every wait for ffmpeg stops at once and
+/// kills the process (see `shut_down`).
+static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+
+/// Stops all running ffmpeg work. Called when the program closes, so no
+/// worker thread can keep it waiting.
+pub fn shut_down() {
+    SHUTDOWN.store(true, Ordering::Relaxed);
+}
+
+/// A child process whose stdout and stderr are drained by reader threads,
+/// so a full pipe can never make it block.
+struct Process {
+    child: Child,
+    stdout: Option<JoinHandle<Vec<u8>>>,
+    stderr: Option<JoinHandle<Vec<u8>>>,
+}
+
+/// How a `Process` ended.
+struct Exit {
+    status: ExitStatus,
+    stdout: String,
+    stderr: String,
+}
+
+fn drain(mut pipe: impl Read + Send + 'static) -> JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = pipe.read_to_end(&mut bytes);
+        bytes
+    })
+}
+
+/// Joins `handle` if it finishes within `grace`; otherwise leaves it, so a
+/// thread stuck on a pipe can never block the caller.
+fn join_within<T>(handle: JoinHandle<T>, grace: Duration) -> Option<std::thread::Result<T>> {
+    let deadline = Instant::now() + grace;
+    while !handle.is_finished() {
+        if Instant::now() >= deadline {
+            return None;
         }
-    };
-    let mut err = String::new();
-    if let Some(mut stderr) = child.stderr.take() {
-        let _ = stderr.read_to_string(&mut err);
+        std::thread::sleep(Duration::from_millis(5));
     }
-    Ok((status, err))
+    Some(handle.join())
+}
+
+impl Process {
+    /// Starts `cmd` with stdout and stderr captured (stdin as set on `cmd`).
+    fn spawn(mut cmd: Command) -> Result<Process, String> {
+        let mut child = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| t!("video.ffmpeg_start", error = e))?;
+        let stdout = child.stdout.take().map(drain);
+        let stderr = child.stderr.take().map(drain);
+        Ok(Process {
+            child,
+            stdout,
+            stderr,
+        })
+    }
+
+    /// Waits for the process to exit. After `timeout`, or as soon as
+    /// `cancel` is set, it is killed and an error returned.
+    fn wait(&mut self, timeout: Duration, cancel: &AtomicBool) -> Result<Exit, String> {
+        let deadline = Instant::now() + timeout;
+        let status = loop {
+            match self.child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() < deadline && !cancel.load(Ordering::Relaxed) => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Ok(None) => {
+                    self.kill();
+                    return Err(t!("video.ffmpeg_timeout").into());
+                }
+                Err(e) => {
+                    self.kill();
+                    return Err(t!("video.ffmpeg_failed", error = e));
+                }
+            }
+        };
+        let text = |pipe: Option<JoinHandle<Vec<u8>>>| {
+            pipe.and_then(|h| join_within(h, PIPE_GRACE))
+                .and_then(Result::ok)
+                .map(|b| String::from_utf8_lossy(&b).into_owned())
+                .unwrap_or_default()
+        };
+        let stdout = text(self.stdout.take());
+        let stderr = text(self.stderr.take());
+        Ok(Exit {
+            status,
+            stdout,
+            stderr,
+        })
+    }
+
+    fn kill(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 /// Runs ffmpeg to completion and turns a failure into a readable message.
 fn run_ffmpeg(args: &[&str]) -> Result<(), String> {
-    let mut child = ffmpeg()
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| t!("video.ffmpeg_start", error = e))?;
-    match wait_for(&mut child)? {
-        (status, _) if status.success() => Ok(()),
-        (_, err) => Err(t!("video.ffmpeg_failed", error = err.trim())),
+    let mut cmd = ffmpeg();
+    cmd.args(args).stdin(Stdio::null());
+    let exit = Process::spawn(cmd)?.wait(FINISH_TIMEOUT, &SHUTDOWN)?;
+    if exit.status.success() {
+        Ok(())
+    } else {
+        Err(t!("video.ffmpeg_failed", error = exit.stderr.trim()))
     }
 }
 
 /// An ongoing recording.
 pub struct Recorder {
-    child: Child,
+    process: Process,
     frames_tx: Option<SyncSender<Vec<u8>>>,
     writer: Option<JoinHandle<std::io::Result<()>>>,
     path: PathBuf,
     clock: FrameClock,
     hits: Vec<SoundHit>,
+    /// When the frame queue last accepted a frame.
+    last_progress: Instant,
+    /// How long the queue may stay full before the encoder counts as hung.
+    stall_timeout: Duration,
+    /// The encoder stopped taking frames and was stopped.
+    stalled: bool,
 }
 
 impl Recorder {
@@ -220,17 +315,17 @@ impl Recorder {
         }
         cmd.args(["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"])
             .args(["-pix_fmt", "yuv420p", "-r", &fps, "-an"])
-            .arg(&path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| t!("video.ffmpeg_start", error = e))?;
-        let mut stdin = child.stdin.take().expect("piped stdin");
-        // A small queue: encoding runs in parallel with the game, and if
-        // ffmpeg falls behind the game waits rather than dropping frames.
-        let (tx, rx) = sync_channel::<Vec<u8>>(4);
+            .arg(&path);
+        Recorder::spawn(cmd, path)
+    }
+
+    /// Starts `cmd` as the encoder, feeding it frames on stdin.
+    fn spawn(mut cmd: Command, path: PathBuf) -> Result<Recorder, String> {
+        cmd.stdin(Stdio::piped());
+        let mut process = Process::spawn(cmd)?;
+        let mut stdin = process.child.stdin.take().expect("piped stdin");
+        // A small, bounded queue: encoding runs in parallel with the game.
+        let (tx, rx) = sync_channel::<Vec<u8>>(QUEUE_FRAMES);
         let writer = std::thread::spawn(move || {
             for frame in rx {
                 stdin.write_all(&frame)?;
@@ -238,12 +333,15 @@ impl Recorder {
             Ok(())
         });
         Ok(Recorder {
-            child,
+            process,
             frames_tx: Some(tx),
             writer: Some(writer),
             path,
             clock: FrameClock::default(),
             hits: Vec::new(),
+            last_progress: Instant::now(),
+            stall_timeout: STALL_TIMEOUT,
+            stalled: false,
         })
     }
 
@@ -253,22 +351,56 @@ impl Recorder {
     }
 
     /// Queues the current picture `copies` times (RGBA, `WIDTH` × `HEIGHT`).
+    ///
+    /// While the encoder makes progress the game waits for room in the
+    /// queue, so no frame is lost and sound stays in sync. If the queue
+    /// takes no frame for `stall_timeout`, the encoder is stopped and the
+    /// recording fails (`failed`); the game never waits longer than that.
     pub fn push_frame(&mut self, rgba: Vec<u8>, copies: u64) {
         debug_assert_eq!(rgba.len(), (WIDTH * HEIGHT * 4) as usize);
-        let Some(tx) = &self.frames_tx else { return };
         let mut frame = Some(rgba);
         for i in 0..copies {
-            let data = if i + 1 == copies {
+            let Some(tx) = &self.frames_tx else { return };
+            let mut data = if i + 1 == copies {
                 frame.take().unwrap_or_default()
             } else {
                 frame.clone().unwrap_or_default()
             };
-            if tx.send(data).is_err() {
-                // ffmpeg has stopped; `finish` reports why.
-                self.frames_tx = None;
-                return;
+            loop {
+                match tx.try_send(data) {
+                    Ok(()) => {
+                        self.last_progress = Instant::now();
+                        break;
+                    }
+                    Err(TrySendError::Full(back)) => {
+                        if self.last_progress.elapsed() >= self.stall_timeout {
+                            self.stall();
+                            return;
+                        }
+                        data = back;
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    Err(TrySendError::Disconnected(_)) => {
+                        // ffmpeg has stopped; `finish` reports why.
+                        self.frames_tx = None;
+                        return;
+                    }
+                }
             }
         }
+    }
+
+    /// The encoder hangs: stop it, which also ends the writer thread.
+    fn stall(&mut self) {
+        self.stalled = true;
+        self.frames_tx = None;
+        self.process.kill();
+    }
+
+    /// The encoder stopped (crashed or hung) and no more frames can be
+    /// recorded; `finish` gives the reason.
+    pub fn failed(&self) -> bool {
+        self.frames_tx.is_none()
     }
 
     /// Notes a sound effect at the current recording time.
@@ -283,11 +415,14 @@ impl Recorder {
         // Closing the queue ends the writer thread, which closes ffmpeg's
         // input so it finishes the file.
         self.frames_tx = None;
-        let waited = wait_for(&mut self.child);
-        let wrote = self.writer.take().map(|w| w.join());
-        let (status, err) = waited?;
-        if !status.success() {
-            return Err(t!("video.ffmpeg_failed", error = err.trim()));
+        let waited = self.process.wait(FINISH_TIMEOUT, &SHUTDOWN);
+        let wrote = self.writer.take().and_then(|w| join_within(w, PIPE_GRACE));
+        if self.stalled {
+            return Err(t!("video.ffmpeg_stalled").into());
+        }
+        let exit = waited?;
+        if !exit.status.success() {
+            return Err(t!("video.ffmpeg_failed", error = exit.stderr.trim()));
         }
         match wrote {
             Some(Ok(Err(e))) => Err(t!("video.pipe", error = e)),
@@ -318,11 +453,15 @@ impl Recorder {
         result
     }
 
-    /// Stops and throws the recording away.
-    pub fn cancel(self) {
-        if let Ok(rec) = self.finish() {
-            rec.discard();
+    /// Stops the encoder at once and throws the recording away, without
+    /// waiting for ffmpeg to finish the file.
+    pub fn cancel(mut self) {
+        self.frames_tx = None;
+        self.process.kill();
+        if let Some(writer) = self.writer.take() {
+            let _ = join_within(writer, PIPE_GRACE);
         }
+        let _ = std::fs::remove_file(&self.path);
     }
 }
 
@@ -700,13 +839,128 @@ mod tests {
         }
         let mut rec = Recorder::start(false).unwrap();
         let path = rec.path.clone();
-        rec.child.kill().unwrap();
+        rec.process.child.kill().unwrap();
         for _ in 0..10 {
             let n = rec.frames_due(1.0 / 60.0);
             rec.push_frame(vec![0; (WIDTH * HEIGHT * 4) as usize], n);
         }
         assert!(rec.finish().is_err());
         assert!(!path.exists(), "no temporary file is left");
+    }
+
+    /// A stand-in for an encoder that starts but never reads its input
+    /// and never exits.
+    #[cfg(unix)]
+    fn hanging_encoder() -> Recorder {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "exec sleep 30"]);
+        let mut rec = Recorder::spawn(cmd, temp_path("mp4")).unwrap();
+        rec.stall_timeout = Duration::from_millis(300);
+        rec
+    }
+
+    #[cfg(unix)]
+    fn process_is_gone(pid: u32) -> bool {
+        Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| !s.success())
+    }
+
+    /// Regression test: an encoder that hangs without exiting must not
+    /// freeze the game. The game waits at most `stall_timeout`, the encoder
+    /// is killed and the recording fails with a clear message.
+    #[cfg(unix)]
+    #[test]
+    fn a_hanging_encoder_is_stopped_instead_of_freezing_the_game() {
+        let mut rec = hanging_encoder();
+        let (pid, path) = (rec.process.child.id(), rec.path.clone());
+        let started = Instant::now();
+        for _ in 0..20 {
+            let n = rec.frames_due(1.0 / 60.0);
+            rec.push_frame(vec![0; (WIDTH * HEIGHT * 4) as usize], n);
+        }
+        let waited = started.elapsed();
+        assert!(
+            waited < Duration::from_secs(2),
+            "the game waited {waited:?}"
+        );
+        assert!(rec.failed(), "the hang is detected");
+        assert!(process_is_gone(pid), "the encoder is killed");
+        let started = Instant::now();
+        let err = rec.finish().unwrap_err();
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(err.contains("stopped responding"), "{err}");
+        assert!(!path.exists(), "no temporary file is left");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cancelling_does_not_wait_for_a_hanging_encoder() {
+        let mut rec = hanging_encoder();
+        let (pid, path) = (rec.process.child.id(), rec.path.clone());
+        rec.push_frame(vec![0; (WIDTH * HEIGHT * 4) as usize], 1);
+        let started = Instant::now();
+        rec.cancel();
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(process_is_gone(pid));
+        assert!(!path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_startup_check_has_a_time_limit() {
+        let sh = |script: &str| {
+            let mut cmd = Command::new("sh");
+            cmd.args(["-c", script]);
+            cmd
+        };
+        let limit = Duration::from_millis(300);
+        let started = Instant::now();
+        let err = check_encoders(sh("exec sleep 30"), limit).unwrap_err();
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(err, t!("video.no_answer"));
+        assert_eq!(check_encoders(sh("echo ' V..... libx264'"), limit), Ok(()));
+        let err = check_encoders(sh("echo ' V..... mpeg4'"), limit).unwrap_err();
+        assert_eq!(err, t!("video.no_x264"));
+        let missing = Command::new("/nonexistent/ffmpeg");
+        assert_eq!(
+            check_encoders(missing, limit).unwrap_err(),
+            t!("video.no_ffmpeg")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shutting_down_stops_a_wait_at_once() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "exec sleep 30"]);
+        let mut process = Process::spawn(cmd).unwrap();
+        let started = Instant::now();
+        let stop = AtomicBool::new(true);
+        assert!(process.wait(Duration::from_secs(60), &stop).is_err());
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    /// Lots of output on stdout and stderr must not block the process.
+    #[cfg(unix)]
+    #[test]
+    fn full_pipes_do_not_block() {
+        let mut cmd = Command::new("sh");
+        cmd.args([
+            "-c",
+            "head -c 1000000 /dev/zero; head -c 1000000 /dev/zero >&2",
+        ]);
+        let exit = Process::spawn(cmd)
+            .unwrap()
+            .wait(Duration::from_secs(10), &AtomicBool::new(false))
+            .unwrap();
+        assert!(exit.status.success());
+        assert_eq!(
+            (exit.stdout.len(), exit.stderr.len()),
+            (1_000_000, 1_000_000)
+        );
     }
 
     #[test]

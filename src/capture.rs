@@ -85,8 +85,10 @@ impl Capture {
                 Some(game) => {
                     self.record(game, frame_time, sounds);
                     // The level's last picture is recorded; stop before
-                    // the results are shown.
+                    // the results are shown. A crashed or hung encoder is
+                    // stopped at once; the game goes on without recording.
                     game.finished().is_some()
+                        || self.recorder.as_ref().is_some_and(Recorder::failed)
                 }
                 // Paused frames are left out; otherwise the round was left.
                 None => !app.paused(),
@@ -226,9 +228,10 @@ impl Capture {
 }
 
 impl Drop for Capture {
-    /// Ends ffmpeg and removes temporary files when the program closes.
-    /// A running save is allowed to complete.
+    /// Stops ffmpeg and removes temporary files when the program closes,
+    /// without waiting for ffmpeg: a running save is stopped too.
     fn drop(&mut self) {
+        video::shut_down();
         if let Some(rec) = self.recorder.take() {
             rec.cancel();
         }

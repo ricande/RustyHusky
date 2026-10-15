@@ -111,13 +111,14 @@ them, so `app.rs` stays window-free.
 
 1. **Start.** On a new `App::round`, `Capture` drops anything left from the
    previous round. If recording is on in the settings and FFmpeg was found at
-   startup (`video::check_ffmpeg`: the program runs and lists libx264), it
+   startup (`video::check_ffmpeg`: the program answers within 5 s and lists
+   libx264), it
    starts a `video::Recorder`; otherwise the status is `Off` or
    `Unavailable(reason)`.
 2. **Frames.** For each frame where `App::running_game` is `Some` (playing,
    not paused), the game is drawn with `screens::draw_game` into a
    1080 × 1920 render target, read back as RGBA and queued (a bounded queue
-   of 4 frames) to a writer thread that pipes it to
+   of 4 frames, `QUEUE_FRAMES`) to a writer thread that pipes it to
    `ffmpeg -f rawvideo -pix_fmt rgba -s 1080x1920 -framerate 60 -i -` →
    `libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -r 60 -an` into a
    temporary `rustyhusky-rec-<pid>-<n>.mp4` in the system temp folder.
@@ -146,10 +147,33 @@ them, so `app.rs` stays window-free.
    starting a new round and closing the program all delete the temporary
    file. Worker results for an older round are cleaned up silently.
 
-Every wait for ffmpeg has a 60 s limit, after which ffmpeg is killed and an
-error is shown, so a hanging encoder can never lock the game. Errors from
-ffmpeg (start failure, encoder error, broken pipe, write failure) become
-translated `VideoStatus` messages.
+### Failures and time limits
+
+FFmpeg may be missing, crash, or hang without exiting. Every case ends in a
+translated `VideoStatus` message and the game keeps running:
+
+- **Hung encoder while recording.** `Recorder::push_frame` never blocks
+  indefinitely. It retries `try_send` on the bounded queue as long as the
+  encoder makes progress, so a merely slow encoder loses no frames (the game
+  waits, as before, and sound stays in sync). If the queue accepts no frame
+  for `STALL_TIMEOUT` (3 s), the encoder is killed, which also ends the
+  writer thread, and the recording fails. Frames are never dropped silently,
+  because that would put sound and picture out of sync.
+- **Crashed encoder.** The queue disconnects; the next frame notices it.
+- In both cases `Recorder::failed` is true; `Capture` then closes the
+  recorder at once (the REC marker disappears) and the results screen shows
+  the reason.
+- **Other waits** go through `video::Process`, which drains stdout and stderr
+  on reader threads (a full pipe can never block ffmpeg) and kills the
+  process after a time limit: 5 s for the startup check, 60 s for finishing
+  and saving (on worker threads).
+- **Closing the program.** `Capture::drop` calls `video::shut_down`, which
+  makes every running wait kill its ffmpeg at once; discarding a recorder
+  (`Recorder::cancel`) also kills instead of waiting. Threads stuck on a pipe
+  are given a 1 s grace and then left behind rather than joined.
+- Tests (Unix) use `sh -c "exec sleep 30"` as an encoder that never reads
+  and never exits, and check that the game waits less than 2 s, the process
+  is killed and no temporary file is left.
 
 ## Translations
 

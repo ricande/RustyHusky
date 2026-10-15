@@ -60,8 +60,10 @@ Run with `cargo run --release`. If `cargo` is not on `PATH`, it is in
    `config::APP_NAME`, `APP_ID` and `config::env("NAME")`.
 8. **Recording must never break the game.** FFmpeg may be missing, fail or
    hang; every such case ends in a `VideoStatus` message, never a panic or a
-   frozen screen. Slow work stays on worker threads. Temporary files are
-   always removed (Discard, leaving the results, closing the program).
+   frozen screen. Never wait for ffmpeg without a time limit: use
+   `video::Process` and the timeouts in `video.rs`, and bounded queues only.
+   Slow work stays on worker threads. Temporary files are always removed
+   (Discard, leaving the results, closing the program).
 9. **Test what you add.** Flow changes get tests in `app.rs`, using the
    example game. Tests that use files use `crate::tests::temp_dir`, never the
    user's folders. Tests run in parallel threads; the language is
@@ -96,6 +98,10 @@ cargo run --release
 - Check a saved video with
   `ffprobe -v error -show_entries stream=width,height,r_frame_rate,nb_frames -of csv=p=0 <file>`;
   expect `1080,1920,60/1,…` and an AAC stream.
+- Check a hanging encoder with a fake ffmpeg that answers `-encoders` with
+  `libx264` and otherwise runs `exec sleep 600`, set via
+  `RUSTYHUSKY_FFMPEG`: the round must go on after a hitch of at most 3 s and
+  the results must show the error.
 - Check missing FFmpeg with `RUSTYHUSKY_FFMPEG=/nonexistent`, and that no
   `rustyhusky-rec-*` files are left in the temp folder afterwards.
 

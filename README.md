@@ -115,11 +115,17 @@ When recording is on and FFmpeg is available, every round is recorded:
   always mixed at full effect volume, whatever the volume setting. Sounds
   from outside the game (other programs, the microphone) are not recorded,
   and menu sounds are never part of the video.
-- **Errors:** a missing FFmpeg, an encoder that fails or a file that cannot
-  be written is shown as a message; the game keeps working. A failed save
-  can be retried. FFmpeg is stopped after 60 s if it ever hangs.
+- **Errors:** a missing FFmpeg, an encoder that crashes or hangs, or a file
+  that cannot be written is shown as a message on the results screen; the
+  game keeps working. A failed save can be retried.
+- **Time limits:** while recording, the game waits for FFmpeg only as long
+  as it keeps taking frames. If it takes none for 3 s it is stopped and the
+  round continues without recording, so a hung encoder costs at most a
+  3-second hitch. The FFmpeg check at startup is limited to 5 s, finishing
+  and saving a video to 60 s.
 - **Clean-up:** temporary files are removed on Discard, on leaving the
-  results, and when the program closes (also via the window's close button).
+  results, and when the program closes (also via the window's close button,
+  which stops any running FFmpeg at once, including a save in progress).
   Leftovers after a crash are removed at the next start once they are a day
   old.
 

@@ -6,7 +6,27 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A hung encoder could freeze the game.** If FFmpeg kept running but
+  stopped reading frames, the game waited forever for room in the frame
+  queue. Now it waits only while FFmpeg makes progress; after 3 s without
+  progress FFmpeg is stopped, the round continues without recording and the
+  results screen shows the error. The queue stays bounded (4 frames) and no
+  frames are dropped, so sound and picture stay in sync.
+- The FFmpeg check at startup has a 5 s time limit (before, a hanging
+  `ffmpeg -encoders` kept the window from opening).
+- Discarding a recording, starting a new round and closing the program no
+  longer wait for FFmpeg (up to 60 s before); they stop it at once.
+- FFmpeg's output is drained on reader threads, so a full pipe cannot block
+  it.
+- The documentation claimed that a hanging encoder could never lock the
+  game; that was only true when finishing and saving.
+
 ### Added
+
+- Regression tests (Unix) for an encoder that hangs without exiting, a
+  hanging startup check, cancelling, shutdown and full pipes.
 
 - `src/config.rs`: the project's name (`APP_NAME`), id (`APP_ID`) and
   environment variable prefix (`ENV_PREFIX`) in one place. Window title,
