@@ -97,3 +97,6 @@ Say clearly what you verified by running the program and what only by tests.
 - Ask before anything hard to undo or outward-facing: pushing, publishing,
   deleting files, or changing things outside the repository.
 - Do not commit build output (`target/`), screenshots or videos.
+- The project is GPL-3.0-or-later. Keep `LICENSES/MIT-RustOut.txt` and
+  `THIRD_PARTY_NOTICES.md`; when adding a dependency, check that its license
+  is compatible with GPLv3 and update the notices if needed.

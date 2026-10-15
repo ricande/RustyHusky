@@ -160,6 +160,8 @@ Handy for testing without touching your real settings and videos:
 | [docs/GAME_RULES.md](docs/GAME_RULES.md) | The example game's behaviour; the place for your game's rules |
 | [AGENTS.md](AGENTS.md) | Rules and checks for contributors and AI agents |
 | [CHANGELOG.md](CHANGELOG.md) | Changes per version |
+| [LICENSE](LICENSE) | GPL-3.0-or-later |
+| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | RustOut (MIT), dependencies, FFmpeg, recorded videos |
 
 ## Known limitations
 
@@ -174,4 +176,15 @@ Handy for testing without touching your real settings and videos:
 
 ## License
 
-MIT – see [LICENSE](LICENSE). Based on RustOut, © 2026 ricande, also MIT.
+RustyHusky is free software, licensed under the GNU General Public License,
+version 3 or (at your option) any later version (GPL-3.0-or-later). The full
+text is in [LICENSE](LICENSE).
+
+- Code reused from [RustOut](https://github.com/ricande/RustOut) keeps its
+  original MIT copyright and permission notice, in
+  [LICENSES/MIT-RustOut.txt](LICENSES/MIT-RustOut.txt).
+- The Rust dependencies and FFmpeg keep their own licenses. See
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- Gameplay videos you record are not automatically covered by the code
+  license. Separate rights to any assets you use (graphics, music, sounds,
+  fonts) still apply.

@@ -8,6 +8,13 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ### Changed
 
+- **License:** RustyHusky is now licensed under GPL-3.0-or-later instead of
+  MIT. `LICENSE` holds the full GPLv3 text and `Cargo.toml` says
+  `GPL-3.0-or-later`. RustOut's original MIT license and copyright notice are
+  kept in `LICENSES/MIT-RustOut.txt` for the reused code, and
+  `THIRD_PARTY_NOTICES.md` explains this, the dependencies' own licenses,
+  FFmpeg, and that recorded videos are not automatically covered by the code
+  license.
 - README and repository description state the project's purpose: portrait
   games and gameplay videos for YouTube Shorts, TikTok and Instagram Reels.
   Videos are published by the user; there is no automatic upload.
