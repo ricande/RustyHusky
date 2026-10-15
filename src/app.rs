@@ -671,11 +671,16 @@ mod tests {
             assert_eq!(app.settings.volume, 80);
 
             frame(&mut app, &key(Key::Down)); // recording
+            assert_eq!(
+                app.settings.recording_mode,
+                RecordingMode::Recording,
+                "default"
+            );
             frame(&mut app, &key(Key::Enter));
-            assert_eq!(app.settings.recording_mode, RecordingMode::Recording);
-            frame(&mut app, &key(Key::Left));
-            frame(&mut app, &key(Key::Left));
             assert_eq!(app.settings.recording_mode, RecordingMode::Off);
+            frame(&mut app, &key(Key::Left));
+            frame(&mut app, &key(Key::Left));
+            assert_eq!(app.settings.recording_mode, RecordingMode::Gameplay);
             assert_eq!(app.settings_error, None);
             assert_eq!(settings::load(&path), app.settings, "saved on every change");
 
@@ -698,7 +703,7 @@ mod tests {
         frame(&mut app, &key(Key::Enter));
         assert_eq!(
             app.settings.recording_mode,
-            RecordingMode::Recording,
+            RecordingMode::Off,
             "the change still applies"
         );
         assert!(app.settings_error.is_some());

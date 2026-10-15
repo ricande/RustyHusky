@@ -86,11 +86,11 @@ Saved as `settings.json` in the data folder and loaded at the next start:
 | --------- | ------------------------- | ------- |
 | Language  | English, Svenska          | English |
 | Volume    | 0–100 % in steps of 10 %  | 80 %    |
-| Recording mode | Prioritize gameplay, Prioritize recording, Off | Prioritize gameplay |
+| Recording mode | Prioritize recording, Prioritize gameplay, Off | Prioritize recording |
 
 A change of recording mode applies from the next round. Files from earlier
-versions with `"recording": true` / `false` are read as Prioritize gameplay /
-Off.
+versions with `"recording": true` / `false` are read as Prioritize recording /
+Off; a saved `recording_mode` is always kept.
 
 Data folder: `$XDG_DATA_HOME/rustyhusky` (normally
 `~/.local/share/rustyhusky`) on Linux, `~/Library/Application
@@ -103,7 +103,7 @@ Unless the recording mode is Off and as long as FFmpeg is available, every
 round is recorded. The two modes differ in what gives way when the computer
 cannot keep up:
 
-| | Prioritize gameplay (default) | Prioritize recording |
+| | Prioritize gameplay | Prioritize recording (default) |
 | --- | --- | --- |
 | Game speed | Real time, always | Follows the video: each video frame is exactly two physics steps (2 × 1/120 s). If frames cannot be produced 60 times per second, the game runs slower. |
 | Video | 60 fps on the game's clock. Pictures are repeated or skipped to match the display's frame rate, so motion is only as smooth as the display rate. | Exactly one new picture per video frame, so motion is always smooth and at normal speed. |

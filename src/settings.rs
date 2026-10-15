@@ -15,10 +15,10 @@ use crate::t;
 #[serde(rename_all = "lowercase")]
 pub enum RecordingMode {
     /// The game follows real time; the video keeps up or recording stops.
-    #[default]
     Gameplay,
     /// Every video frame is produced from exactly two physics steps; the
-    /// game may run slower than real time, the video never does.
+    /// game may run slower than real time, the video never does. Default.
+    #[default]
     Recording,
     /// No recording.
     Off,
@@ -136,7 +136,7 @@ fn parse(text: &str) -> Settings {
     }) = serde_json::from_str::<Legacy>(text)
     {
         s.recording_mode = if on {
-            RecordingMode::Gameplay
+            RecordingMode::Recording
         } else {
             RecordingMode::Off
         };
@@ -173,7 +173,7 @@ mod tests {
         let path = dir.join("sub/settings.json");
         let defaults = load(&path);
         assert_eq!(defaults, Settings::default());
-        assert_eq!(defaults.recording_mode, RecordingMode::Gameplay, "default");
+        assert_eq!(defaults.recording_mode, RecordingMode::Recording, "default");
         assert_eq!(defaults.lang(), Lang::En, "English by default");
 
         let mut s = Settings {
@@ -203,7 +203,7 @@ mod tests {
         let mode = s.recording_mode;
         assert_eq!(
             (s.volume, mode, s.lang()),
-            (30, RecordingMode::Gameplay, Lang::En)
+            (30, RecordingMode::Recording, Lang::En)
         );
         fs::write(&path, r#"{ "volume": 300, "language": "xx" }"#).unwrap();
         // 300 does not fit a u8, so the whole file is ignored.
@@ -220,13 +220,24 @@ mod tests {
     #[test]
     fn old_recording_flags_are_migrated() {
         let mode = |text: &str| parse(text).recording_mode;
-        assert_eq!(mode(r#"{ "recording": true }"#), RecordingMode::Gameplay);
+        assert_eq!(mode(r#"{ "recording": true }"#), RecordingMode::Recording);
         assert_eq!(mode(r#"{ "recording": false }"#), RecordingMode::Off);
         assert_eq!(
             mode(r#"{ "volume": 40 }"#),
-            RecordingMode::Gameplay,
+            RecordingMode::Recording,
             "default"
         );
+        // A saved choice is kept, also when it is not the default.
+        for saved in ["gameplay", "recording", "off"] {
+            let text = format!(r#"{{ "recording_mode": "{saved}" }}"#);
+            let s = parse(&text);
+            assert!(
+                serde_json::to_string(&s).unwrap().contains(saved),
+                "{saved}"
+            );
+        }
+        let kept = r#"{ "recording": true, "recording_mode": "gameplay" }"#;
+        assert_eq!(mode(kept), RecordingMode::Gameplay);
         // The new field wins over the old one.
         let both = r#"{ "recording": false, "recording_mode": "recording" }"#;
         assert_eq!(mode(both), RecordingMode::Recording);

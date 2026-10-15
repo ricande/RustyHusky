@@ -6,6 +6,12 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Prioritize recording is now the default recording mode, and old
+  `"recording": true` settings migrate to it. A saved `recording_mode` is
+  kept as it is.
+
 ### Added
 
 - `scripts/new-game.sh "My Game"` names a new game made from the template
