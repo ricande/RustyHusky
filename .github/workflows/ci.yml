@@ -22,6 +22,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Vendored miniquad is the published crate plus our patches
+        run: ./scripts/check-vendored-miniquad.sh
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       # With FFmpeg installed, the video tests encode and check real MP4s.

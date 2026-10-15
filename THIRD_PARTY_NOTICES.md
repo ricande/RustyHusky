@@ -35,6 +35,15 @@ include the license notices those crates require. To list them:
 cargo metadata --format-version 1 | jq -r '.packages[] | "\(.name) \(.version): \(.license)"'
 ```
 
+### Vendored miniquad
+
+`vendor/miniquad-0.4.11/` is miniquad 0.4.11 exactly as published on
+crates.io (`MIT OR Apache-2.0`, © the miniquad authors; see its
+`LICENSE-MIT` and `LICENSE-APACHE`, kept unchanged), plus one patch,
+`vendor/patches/miniquad-0.4.11-forget-deleted-texture.patch`, made for
+RustyHusky and offered upstream under the same terms. It is not relicensed;
+see [docs/UPSTREAM_FIXES.md](docs/UPSTREAM_FIXES.md).
+
 ## FFmpeg
 
 Video recording runs the `ffmpeg` program installed on the user's system as

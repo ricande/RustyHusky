@@ -187,7 +187,6 @@ async fn main() {
             .is_some_and(|w| w.as_secs_f32() >= 1.0);
         let recording = capture.is_recording();
         screens::draw(&app, &view, input.pointer, recording, waiting, time);
-        view::end_batch();
 
         let mut quit = app.quit || is_quit_requested();
         if let Some(f) = &scripted {

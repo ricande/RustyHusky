@@ -177,20 +177,6 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-/// Ends a batch of drawing with a draw that does not use the font atlas.
-/// Call last before the drawing is flushed (camera change, end of frame).
-///
-/// Works around miniquad 0.4.11: `delete_texture` does not clear its
-/// texture-binding cache. When the font atlas grows, macroquad deletes its
-/// texture and creates a new one that often gets the same GL name; if the
-/// cache still believes that name is bound, the new texture's pixels are
-/// never uploaded and all text turns into black blocks for good. Leaving a
-/// plain (white-texture) draw last means the atlas is never the cached
-/// binding when that happens.
-pub fn end_batch() {
-    draw_rectangle(0.0, 0.0, 1.0, 1.0, Color::new(0.0, 0.0, 0.0, 0.0));
-}
-
 /// The default field background: a dark vertical gradient with a faint grid.
 pub fn draw_background(v: &View) {
     const BANDS: usize = 24;

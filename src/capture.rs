@@ -322,7 +322,6 @@ fn draw_video_frame<G: Game>(target: &RenderTarget, camera: &Camera2D, game: &G)
     set_camera(camera);
     clear_background(BACKDROP);
     crate::screens::draw_game(game, &View::fit(WIDTH as f32, HEIGHT as f32));
-    crate::view::end_batch();
     set_default_camera();
     target.texture.get_texture_data().bytes
 }

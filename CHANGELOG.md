@@ -68,9 +68,13 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ### Fixed
 
-- Text could turn into black blocks for the rest of the run when the font
-  atlas grew while the font texture was the last one drawn (a texture-cache
-  bug in miniquad 0.4.11); worked around with `view::end_batch`.
+- Text could turn into black rectangles for the rest of the run when the
+  font atlas grew right after a render-target pass (macroquad#1006). The
+  cause is in miniquad 0.4.11: deleting a texture left it in the
+  texture-binding cache. RustyHusky now builds against miniquad 0.4.11 with
+  that fixed (`vendor/`, `[patch.crates-io]`); see docs/UPSTREAM_FIXES.md.
+  An earlier workaround (an invisible rectangle drawn last, `view::end_batch`)
+  is removed: it made the failure rarer but did not prevent it.
 - **A hung or slow encoder could freeze or slow the game.** If FFmpeg kept
   running but stopped reading frames, the game waited forever for room in
   the frame queue; if it encoded slower than real time, the game slowed down

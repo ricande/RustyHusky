@@ -204,6 +204,7 @@ prefix is `config::ENV_PREFIX` (`RUSTYHUSKY` here):
 | -------- | -------- |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Modules, coordinates, time step, i18n, recording flow |
 | [docs/GAME_RULES.md](docs/GAME_RULES.md) | The example game's behaviour; the place for your game's rules |
+| [docs/UPSTREAM_FIXES.md](docs/UPSTREAM_FIXES.md) | The patched miniquad: symptom, cause, verification, how to remove it |
 | [AGENTS.md](AGENTS.md) | Rules and checks for contributors and AI agents |
 | [CHANGELOG.md](CHANGELOG.md) | Changes per version |
 | [LICENSE](LICENSE) | GPL-3.0-or-later |
@@ -224,8 +225,10 @@ prefix is `config::ENV_PREFIX` (`RUSTYHUSKY` here):
 - In Prioritize gameplay, motion in the video is only as smooth as the
   display's frame rate: at 30 Hz every picture is shown twice. The file is
   60 fps either way.
-- Text drawing works around a texture-cache bug in miniquad 0.4.11
-  (`view::end_batch`); see docs/ARCHITECTURE.md.
+- RustyHusky builds against a patched copy of miniquad 0.4.11 in `vendor/`
+  that fixes black text rectangles (macroquad#1006); see
+  [docs/UPSTREAM_FIXES.md](docs/UPSTREAM_FIXES.md). Building it prints two
+  warnings from miniquad's own, unchanged code.
 - The video sound contains only the game's synthesized effects.
 - The start window size is fitted to the screen on X11/XWayland (via `xprop`
   and `xrandr`); elsewhere it starts at 360 × 640. It can always be resized.

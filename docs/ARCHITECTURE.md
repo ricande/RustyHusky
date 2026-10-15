@@ -75,8 +75,7 @@ Macroquad. ³ needs `ffmpeg` at run time; its tests skip when it is missing.
    once `Game::finished` returns a result – *after* the last frame was
    recorded, and in Prioritize recording only once that frame has been
    accepted by the encoder (`Capture::holding`).
-7. **Draw.** `screens::draw` draws the current screen in the window, then
-   `view::end_batch` (see *Text and the miniquad texture cache*).
+7. **Draw.** `screens::draw` draws the current screen in the window.
 
 Closing the window or choosing Quit ends the loop normally, so `Capture` is
 dropped and cleans up.
@@ -225,17 +224,14 @@ translated `VideoStatus` message and the game keeps running:
   waits), no frame produced or repeated during a pause, a hung encoder
   detected without blocking, and an immediate abort.
 
-### Text and the miniquad texture cache
+### Text and the patched miniquad
 
-miniquad 0.4.11's `delete_texture` does not clear its texture-binding cache.
-When the font atlas fills up, macroquad deletes its texture and creates a
-larger one, which often gets the same GL name. If the cache still believes
-that name is bound, the new texture's pixels are never uploaded and every
-glyph is drawn as a black block from then on. Whether it happens depends
-only on which texture was drawn last before the atlas grows, so any mode
-could hit it (the recording tour did). `view::end_batch` draws an invisible
-plain rectangle as the last draw before each flush – after the window and
-after every video frame – so the atlas is never the cached binding.
+RustyHusky builds against a vendored miniquad 0.4.11 with one fix
+(`vendor/`, `[patch.crates-io]` in `Cargo.toml`). Without it, text could turn
+into black rectangles for the rest of the run when macroquad's font atlas
+grew right after a render-target pass (macroquad#1006); the recording tour
+hit it. Details, verification and how to drop the copy again are in
+[UPSTREAM_FIXES.md](UPSTREAM_FIXES.md).
 
 ## Translations
 
