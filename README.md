@@ -162,7 +162,10 @@ Start a new repository from this one: **Use this template** on GitHub, or
 gh repo create my-game --template ricande/RustyHusky --public --clone
 ```
 
-The new repository gets all files but none of the history. Then:
+The new repository gets all files but none of the history. Run
+`./scripts/new-game.sh "My Game"` to name it (it does step 1 below and
+resets the changelog); [docs/NEW_GAME.md](docs/NEW_GAME.md) walks through
+the rest. In short:
 
 1. Name your project in `src/config.rs` (`APP_NAME`, `APP_ID`,
    `ENV_PREFIX`) and in `Cargo.toml`. The window title, menu title, data and
@@ -218,6 +221,7 @@ prefix is `config::ENV_PREFIX` (`RUSTYHUSKY` here):
 | -------- | -------- |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Modules, coordinates, time step, i18n, recording flow |
 | [docs/GAME_RULES.md](docs/GAME_RULES.md) | The example game's behaviour; the place for your game's rules |
+| [docs/NEW_GAME.md](docs/NEW_GAME.md) | Step by step from the template to your own game |
 | [docs/UPSTREAM_FIXES.md](docs/UPSTREAM_FIXES.md) | The patched miniquad: symptom, cause, verification, how to remove it |
 | [AGENTS.md](AGENTS.md) | Rules and checks for contributors and AI agents |
 | [CHANGELOG.md](CHANGELOG.md) | Changes per version |
