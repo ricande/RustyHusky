@@ -15,7 +15,7 @@ use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -32,10 +32,6 @@ pub const FPS: u32 = 60;
 /// repeated): about 0.4 s of video, at most about 200 MB, used only while
 /// the encoder is behind. Bounded, so memory stays bounded.
 const QUEUE_PICTURES: usize = 24;
-/// Longest the game waits in one frame for room in the queue, well within
-/// a 60 fps frame (16.7 ms). If there is still no room, the encoder cannot
-/// keep up and the recording is stopped.
-const FRAME_WAIT: Duration = Duration::from_millis(2);
 /// Longest wait for ffmpeg to finish or save a file (on a worker thread).
 const FINISH_TIMEOUT: Duration = Duration::from_secs(60);
 /// Longest wait for the ffmpeg check at startup.
@@ -65,10 +61,6 @@ impl FrameClock {
 
     pub fn time(&self) -> f64 {
         self.time
-    }
-
-    pub fn frames(&self) -> u64 {
-        self.written
     }
 }
 
@@ -289,18 +281,41 @@ fn run_ffmpeg(args: &[&str]) -> Result<(), String> {
 /// A picture and how many video frames show it.
 type Picture = (Arc<Vec<u8>>, u64);
 
+/// The result of offering a picture to the encoder without waiting.
+#[derive(Debug)]
+pub enum Offer {
+    Accepted,
+    /// The queue is full; the picture is handed back to offer again later.
+    Full(Vec<u8>),
+    /// The encoder has stopped; `finish` gives the reason.
+    Failed,
+}
+
+/// Why a recording was stopped by the program rather than by ffmpeg.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stopped {
+    /// Prioritize gameplay: the queue was full, the encoder could not keep up.
+    Behind,
+    /// Prioritize recording: the encoder took nothing for a long time.
+    Hung,
+}
+
 /// An ongoing recording.
 pub struct Recorder {
     process: Process,
     frames_tx: Option<SyncSender<Picture>>,
     writer: Option<JoinHandle<std::io::Result<()>>>,
+    /// Video frames the writer thread has passed to ffmpeg so far: shows
+    /// whether a slow encoder still makes progress.
+    written: Arc<AtomicU64>,
     path: PathBuf,
+    /// Size of one frame in bytes (`WIDTH` × `HEIGHT` × 4; smaller in tests).
+    frame_bytes: usize,
     clock: FrameClock,
+    /// Video frames accepted into the queue: the length of the video.
+    frames: u64,
     hits: Vec<SoundHit>,
-    /// Longest wait for room in the queue per frame (`FRAME_WAIT`).
-    frame_wait: Duration,
-    /// The encoder fell behind (hung or too slow) and was stopped.
-    behind: bool,
+    stopped: Option<Stopped>,
 }
 
 impl Recorder {
@@ -320,20 +335,30 @@ impl Recorder {
         cmd.args(["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"])
             .args(["-pix_fmt", "yuv420p", "-r", &fps, "-an"])
             .arg(&path);
-        Recorder::spawn(cmd, path)
+        let frame_bytes = (WIDTH * HEIGHT * 4) as usize;
+        Recorder::spawn(cmd, path, frame_bytes, QUEUE_PICTURES)
     }
 
-    /// Starts `cmd` as the encoder, feeding it frames on stdin.
-    fn spawn(mut cmd: Command, path: PathBuf) -> Result<Recorder, String> {
+    /// Starts `cmd` as the encoder, feeding it frames on stdin through a
+    /// queue of at most `queue` pictures.
+    fn spawn(
+        mut cmd: Command,
+        path: PathBuf,
+        frame_bytes: usize,
+        queue: usize,
+    ) -> Result<Recorder, String> {
         cmd.stdin(Stdio::piped());
         let mut process = Process::spawn(cmd)?;
         let mut stdin = process.child.stdin.take().expect("piped stdin");
+        let written = Arc::new(AtomicU64::new(0));
+        let progress = written.clone();
         // A small, bounded queue: encoding runs in parallel with the game.
-        let (tx, rx) = sync_channel::<Picture>(QUEUE_PICTURES);
+        let (tx, rx) = sync_channel::<Picture>(queue);
         let writer = std::thread::spawn(move || {
             for (picture, copies) in rx {
                 for _ in 0..copies {
                     stdin.write_all(&picture)?;
+                    progress.fetch_add(1, Ordering::Relaxed);
                 }
             }
             Ok(())
@@ -342,70 +367,92 @@ impl Recorder {
             process,
             frames_tx: Some(tx),
             writer: Some(writer),
+            written,
             path,
+            frame_bytes,
             clock: FrameClock::default(),
+            frames: 0,
             hits: Vec::new(),
-            frame_wait: FRAME_WAIT,
-            behind: false,
+            stopped: None,
         })
     }
 
-    /// Advances the recording clock; returns how many frames are due.
+    /// Prioritize gameplay: advances the recording clock by real time and
+    /// returns how many frames are due.
     pub fn frames_due(&mut self, dt: f64) -> u64 {
         self.clock.advance(dt)
     }
 
-    /// Queues the current picture for `copies` video frames (RGBA,
-    /// `WIDTH` × `HEIGHT`).
-    ///
-    /// The game waits at most `FRAME_WAIT` for room in the queue. If there
-    /// is none, the encoder has fallen behind (it hangs or cannot encode in
-    /// real time). Frames are never dropped, since that would make the video
-    /// shorter than the sound; instead the encoder is stopped and the
-    /// recording fails (`failed`). So the video is either complete or absent.
-    pub fn push_frame(&mut self, rgba: Vec<u8>, copies: u64) {
-        debug_assert_eq!(rgba.len(), (WIDTH * HEIGHT * 4) as usize);
-        let Some(tx) = &self.frames_tx else { return };
-        if copies == 0 {
-            return;
-        }
-        let deadline = Instant::now() + self.frame_wait;
-        let mut picture = (Arc::new(rgba), copies);
-        loop {
-            match tx.try_send(picture) {
-                Ok(()) => return,
-                Err(TrySendError::Full(back)) if Instant::now() < deadline => {
-                    picture = back;
-                    std::thread::sleep(Duration::from_micros(200));
-                }
-                Err(TrySendError::Full(_)) => {
-                    // Stopping the encoder also ends the writer thread.
-                    self.behind = true;
-                    self.frames_tx = None;
-                    self.process.kill();
-                    return;
-                }
-                Err(TrySendError::Disconnected(_)) => {
-                    // ffmpeg has stopped; `finish` reports why.
-                    self.frames_tx = None;
-                    return;
-                }
+    /// Offers a picture for the next `copies` video frames, without waiting.
+    pub fn offer(&mut self, rgba: Vec<u8>, copies: u64) -> Offer {
+        debug_assert_eq!(rgba.len(), self.frame_bytes);
+        let Some(tx) = &self.frames_tx else {
+            return Offer::Failed;
+        };
+        match tx.try_send((Arc::new(rgba), copies)) {
+            Ok(()) => {
+                self.frames += copies;
+                Offer::Accepted
+            }
+            Err(TrySendError::Full((picture, _))) => {
+                Offer::Full(Arc::try_unwrap(picture).unwrap_or_else(|p| (*p).clone()))
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                self.frames_tx = None;
+                Offer::Failed
             }
         }
     }
 
-    /// The encoder stopped (crashed or hung) and no more frames can be
-    /// recorded; `finish` gives the reason.
+    /// Prioritize gameplay: queues the current picture for `copies` video
+    /// frames (RGBA, `WIDTH` × `HEIGHT`) without ever waiting.
+    ///
+    /// If the bounded queue is full, the encoder has fallen behind (it hangs
+    /// or cannot encode in real time). Frames are never dropped, since the
+    /// video would then be shorter than its sound; instead the encoder is
+    /// stopped and the recording fails (`failed`). So the video is either
+    /// complete or absent.
+    pub fn push_frame(&mut self, rgba: Vec<u8>, copies: u64) {
+        if copies == 0 {
+            return;
+        }
+        if let Offer::Full(_) = self.offer(rgba, copies) {
+            self.stop(Stopped::Behind);
+        }
+    }
+
+    /// Video frames ffmpeg has taken so far (grows while it makes progress).
+    pub fn written(&self) -> u64 {
+        self.written.load(Ordering::Relaxed)
+    }
+
+    /// Prioritize recording: the encoder took nothing for too long.
+    pub fn give_up_hung(&mut self) {
+        self.stop(Stopped::Hung);
+    }
+
+    /// Stops the encoder, which also ends the writer thread.
+    fn stop(&mut self, why: Stopped) {
+        self.stopped = Some(why);
+        self.frames_tx = None;
+        self.process.kill();
+    }
+
+    /// The encoder stopped (crashed, hung or fell behind) and no more
+    /// frames can be recorded; `finish` gives the reason.
     pub fn failed(&self) -> bool {
         self.frames_tx.is_none()
     }
 
-    /// Notes a sound effect at the current recording time.
+    /// Prioritize gameplay: notes a sound effect at the current recording
+    /// time.
     pub fn add_sound(&mut self, sfx: usize) {
-        self.hits.push(SoundHit {
-            time: self.clock.time(),
-            sfx,
-        });
+        self.add_sound_at(self.clock.time(), sfx);
+    }
+
+    /// Notes a sound effect at `time` seconds into the video.
+    pub fn add_sound_at(&mut self, time: f64, sfx: usize) {
+        self.hits.push(SoundHit { time, sfx });
     }
 
     fn close(&mut self) -> Result<(), String> {
@@ -414,8 +461,10 @@ impl Recorder {
         self.frames_tx = None;
         let waited = self.process.wait(FINISH_TIMEOUT, &SHUTDOWN);
         let wrote = self.writer.take().and_then(|w| join_within(w, PIPE_GRACE));
-        if self.behind {
-            return Err(t!("video.encoder_behind").into());
+        match self.stopped {
+            Some(Stopped::Behind) => return Err(t!("video.encoder_behind").into()),
+            Some(Stopped::Hung) => return Err(t!("video.encoder_hung").into()),
+            None => {}
         }
         let exit = waited?;
         if !exit.status.success() {
@@ -429,10 +478,11 @@ impl Recorder {
     }
 
     /// Ends the recording and waits for the encoder to finish the file.
-    /// On failure the temporary file is removed.
+    /// The video is as long as the frames accepted into the queue. On
+    /// failure the temporary file is removed.
     pub fn finish(mut self) -> Result<Recording, String> {
         let result = self.close();
-        let frames = self.clock.frames();
+        let frames = self.frames;
         let path = std::mem::take(&mut self.path);
         let result = match result {
             Ok(()) if frames > 0 => {
@@ -459,6 +509,29 @@ impl Recorder {
             let _ = join_within(writer, PIPE_GRACE);
         }
         let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+#[cfg(test)]
+impl Recorder {
+    /// A recorder whose encoder is `sh -c script`, with frames of
+    /// `frame_bytes` bytes and a queue of `queue` pictures.
+    pub fn with_script(script: &str, frame_bytes: usize, queue: usize) -> Recorder {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", script]);
+        Recorder::spawn(cmd, temp_path("mp4"), frame_bytes, queue).unwrap()
+    }
+
+    pub fn frames(&self) -> u64 {
+        self.frames
+    }
+
+    pub fn hits(&self) -> &[SoundHit] {
+        &self.hits
+    }
+
+    pub fn pid(&self) -> u32 {
+        self.process.child.id()
     }
 }
 
@@ -634,15 +707,35 @@ pub fn display_path(path: &Path) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::sync::{Mutex, MutexGuard};
 
     /// Tests that encode video or measure waiting take turns, so they do
     /// not starve each other of CPU on small test machines.
-    fn heavy() -> MutexGuard<'static, ()> {
+    pub(crate) fn heavy() -> MutexGuard<'static, ()> {
         static LOCK: Mutex<()> = Mutex::new(());
         LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Queues a picture, waiting for room: tests that produce frames faster
+    /// than real time use this to test the file, not the machine's speed.
+    pub(crate) fn push_waiting(rec: &mut Recorder, mut rgba: Vec<u8>, copies: u64) {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        if copies == 0 {
+            return;
+        }
+        loop {
+            match rec.offer(rgba, copies) {
+                Offer::Accepted | Offer::Failed => return,
+                Offer::Full(back) => rgba = back,
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the encoder took nothing for 30 s"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     #[test]
@@ -745,11 +838,9 @@ mod tests {
             return;
         }
         let mut rec = Recorder::start(false).unwrap();
-        // Frames come faster than real time here; let the test wait.
-        rec.frame_wait = Duration::from_secs(10);
         let mut frame = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
         let mut total = rec.frames_due(0.0);
-        rec.push_frame(frame.clone(), total);
+        push_waiting(&mut rec, frame.clone(), total);
         // A 45 Hz display: some pictures are repeated to keep 60 fps.
         for i in 0..44 {
             frame.iter_mut().for_each(|b| *b = (i * 5) as u8);
@@ -757,7 +848,7 @@ mod tests {
             if i == 10 {
                 rec.add_sound(crate::audio::Sfx::Blip.index());
             }
-            rec.push_frame(frame.clone(), n);
+            push_waiting(&mut rec, frame.clone(), n);
             total += n;
         }
         let recording = rec.finish().unwrap();
@@ -863,7 +954,8 @@ mod tests {
     fn fake_encoder(script: &str) -> Recorder {
         let mut cmd = Command::new("sh");
         cmd.args(["-c", script]);
-        Recorder::spawn(cmd, temp_path("mp4")).unwrap()
+        let frame_bytes = (WIDTH * HEIGHT * 4) as usize;
+        Recorder::spawn(cmd, temp_path("mp4"), frame_bytes, QUEUE_PICTURES).unwrap()
     }
 
     /// A stand-in for an encoder that starts but never reads its input
@@ -904,12 +996,14 @@ mod tests {
         longest
     }
 
-    /// A frame may wait `FRAME_WAIT`; allow for a busy test machine.
+    /// `push_frame` never waits for the encoder. Stopping one kills it and
+    /// reaps the process, which a fully loaded machine can delay; a real
+    /// regression would block for seconds or forever.
     #[cfg(unix)]
-    const MAX_PUSH: Duration = Duration::from_millis(50);
+    pub(crate) const MAX_PUSH: Duration = Duration::from_millis(250);
 
     /// Regression test: an encoder that hangs without exiting must not
-    /// freeze the game. Each frame waits at most `FRAME_WAIT`, then the
+    /// freeze the game. No frame waits for it; once the queue is full the
     /// encoder is killed and the recording fails with a clear message.
     #[cfg(unix)]
     #[test]
@@ -957,7 +1051,7 @@ mod tests {
         let longest = play_in_real_time(&mut rec, 1.0);
         let kept_up = !rec.failed();
         rec.push_frame(vec![0; (WIDTH * HEIGHT * 4) as usize], 3);
-        let frames = rec.clock.frames() + 3;
+        let frames = rec.frames;
         let finished = rec.finish().map(Recording::discard);
         let bytes = std::fs::metadata(&out).map(|m| m.len());
         // Clean up before checking, so a failure leaves no 300 MB file.

@@ -67,6 +67,26 @@ pub struct Input {
 }
 
 impl Input {
+    /// Adds a later frame's input: presses and clicks accumulate, while the
+    /// pointer, held keys and button state follow the latest frame. Used to
+    /// keep one-shot presses until the game's next simulation step.
+    pub fn merge(&mut self, later: &Input) {
+        self.keys.extend(&later.keys);
+        self.left_pressed |= later.left_pressed;
+        self.pointer = later.pointer;
+        self.left_down = later.left_down;
+        self.held.clone_from(&later.held);
+    }
+
+    /// The accumulated input, leaving only the state (pointer, held keys,
+    /// button down) for the next step, so a press is delivered once.
+    pub fn take(&mut self) -> Input {
+        let all = self.clone();
+        self.keys.clear();
+        self.left_pressed = false;
+        all
+    }
+
     /// `key` was pressed this frame.
     pub fn key(&self, key: Key) -> bool {
         self.keys.contains(&key)
@@ -110,6 +130,16 @@ pub fn button_column<A>(top: f32, items: Vec<(String, A)>) -> Vec<Button<A>> {
             enabled: true,
         })
         .collect()
+}
+
+/// A centred column of buttons `width` wide starting at `top`.
+pub fn button_column_w<A>(top: f32, width: f32, items: Vec<(String, A)>) -> Vec<Button<A>> {
+    let mut buttons = button_column(top, items);
+    for b in &mut buttons {
+        b.rect.x = (crate::view::FIELD_W - width) / 2.0;
+        b.rect.w = width;
+    }
+    buttons
 }
 
 /// A row of equal buttons filling `area`.
@@ -216,6 +246,36 @@ mod tests {
         assert_eq!(focus, 0, "hovering moves the focus");
         let none: Vec<Button<u8>> = Vec::new();
         assert_eq!(choose(&none, &mut focus, &key(Key::Enter)), None);
+    }
+
+    #[test]
+    fn merged_presses_are_delivered_once() {
+        let mut pending = Input::default();
+        pending.merge(&Input {
+            keys: vec![Key::Space],
+            held: vec![Key::Left],
+            left_pressed: true,
+            left_down: true,
+            ..Default::default()
+        });
+        pending.merge(&Input {
+            keys: vec![Key::Enter],
+            held: vec![Key::Right],
+            ..Default::default()
+        });
+        let first = pending.take();
+        assert_eq!(first.keys, vec![Key::Space, Key::Enter], "nothing lost");
+        assert!(
+            first.left_pressed && !first.left_down,
+            "click kept, button now up"
+        );
+        assert_eq!(first.held, vec![Key::Right], "held keys are the latest");
+        let second = pending.take();
+        assert!(
+            second.keys.is_empty() && !second.left_pressed,
+            "delivered once"
+        );
+        assert_eq!(second.held, vec![Key::Right], "state stays");
     }
 
     #[test]

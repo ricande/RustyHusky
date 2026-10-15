@@ -11,10 +11,10 @@ use std::path::PathBuf;
 use macroquad::math::Rect;
 
 use crate::audio::Sfx;
-use crate::game::{Game, RoundResult};
-use crate::settings::{self, Settings};
+use crate::game::{Game, RoundResult, FIXED_DT};
+use crate::settings::{self, RecordingMode, Settings};
 use crate::t;
-use crate::ui::{button_column, button_row, choose, Button, Input, Key};
+use crate::ui::{button_column, button_column_w, button_row, choose, Button, Input, Key};
 
 pub enum Screen<G> {
     Menu,
@@ -108,13 +108,14 @@ pub fn menu_buttons() -> Vec<Button<MenuAction>> {
 }
 
 pub fn settings_buttons(s: &Settings) -> Vec<Button<SettingsAction>> {
-    let recording = if s.recording {
-        t!("settings.recording_on")
-    } else {
-        t!("settings.recording_off")
+    let recording = match s.recording_mode {
+        RecordingMode::Gameplay => t!("settings.mode_gameplay"),
+        RecordingMode::Recording => t!("settings.mode_recording"),
+        RecordingMode::Off => t!("settings.mode_off"),
     };
-    let mut buttons = button_column(
+    let mut buttons = button_column_w(
         240.0,
+        SETTINGS_W,
         vec![
             (t!("settings.language").into(), SettingsAction::Language),
             (
@@ -130,6 +131,9 @@ pub fn settings_buttons(s: &Settings) -> Vec<Button<SettingsAction>> {
     ));
     buttons
 }
+
+/// Width of the settings buttons, wide enough for the recording modes.
+const SETTINGS_W: f32 = 460.0;
 
 pub fn pause_buttons() -> Vec<Button<PauseAction>> {
     button_column(
@@ -189,7 +193,13 @@ pub struct App<G> {
     pub video_request: Option<VideoRequest>,
     /// The player chose Quit.
     pub quit: bool,
-    sounds: Vec<Sfx>,
+    /// A round started this frame (see `take_round_started`).
+    round_started: bool,
+    /// Game input not yet delivered to the game; it gets it at its next
+    /// simulation step (`advance`), so no press is lost or repeated.
+    game_input: Input,
+    /// Sounds of the menus (never recorded).
+    ui_sounds: Vec<Sfx>,
 }
 
 impl<G: Game> App<G> {
@@ -207,7 +217,9 @@ impl<G: Game> App<G> {
             video: VideoStatus::Off,
             video_request: None,
             quit: false,
-            sounds: Vec::new(),
+            round_started: false,
+            game_input: Input::default(),
+            ui_sounds: Vec::new(),
         }
     }
 
@@ -223,6 +235,8 @@ impl<G: Game> App<G> {
             paused: false,
         });
         self.round += 1;
+        self.round_started = true;
+        self.game_input = Input::default();
         self.play_time = 0.0;
         self.video = VideoStatus::Off;
         self.video_request = None;
@@ -243,6 +257,18 @@ impl<G: Game> App<G> {
         matches!(self.screen, Screen::Playing { paused: true, .. })
     }
 
+    /// A round is being played (paused or not).
+    pub fn in_round(&self) -> bool {
+        matches!(self.screen, Screen::Playing { .. })
+    }
+
+    /// True once after a round has started. Its first video frame shows the
+    /// state before any simulation step, so the caller does not simulate
+    /// in that frame.
+    pub fn take_round_started(&mut self) -> bool {
+        std::mem::take(&mut self.round_started)
+    }
+
     /// Handles one frame of input.
     pub fn handle(&mut self, input: &Input) {
         match &mut self.screen {
@@ -255,7 +281,7 @@ impl<G: Game> App<G> {
                     if resume || chosen == Some(PauseAction::Resume) {
                         *paused = false;
                     } else if chosen == Some(PauseAction::Abort) {
-                        self.sounds.push(Sfx::Click);
+                        self.ui_sounds.push(Sfx::Click);
                         let level = self.level;
                         self.go(Screen::Results {
                             level,
@@ -266,7 +292,7 @@ impl<G: Game> App<G> {
                     *paused = true;
                     self.focus = 0;
                 } else if game.finished().is_none() {
-                    game.handle(input);
+                    self.game_input.merge(input);
                 }
             }
             Screen::Results { level, result } => {
@@ -279,11 +305,11 @@ impl<G: Game> App<G> {
     fn handle_menu(&mut self, input: &Input) {
         match choose(&menu_buttons(), &mut self.focus, input) {
             Some(MenuAction::Play) => {
-                self.sounds.push(Sfx::Click);
+                self.ui_sounds.push(Sfx::Click);
                 self.start_round(1);
             }
             Some(MenuAction::Settings) => {
-                self.sounds.push(Sfx::Click);
+                self.ui_sounds.push(Sfx::Click);
                 self.go(Screen::Settings);
             }
             Some(MenuAction::Quit) => self.quit = true,
@@ -321,7 +347,7 @@ impl<G: Game> App<G> {
             self.go(Screen::Menu);
         }
         if changed {
-            self.sounds.push(Sfx::Click);
+            self.ui_sounds.push(Sfx::Click);
             self.save_settings();
         }
     }
@@ -339,7 +365,9 @@ impl<G: Game> App<G> {
                 self.settings.change_volume(step);
                 return self.settings.volume != before;
             }
-            SettingsAction::Recording => self.settings.recording = !self.settings.recording,
+            SettingsAction::Recording => {
+                self.settings.recording_mode = self.settings.recording_mode.cycle(step)
+            }
             SettingsAction::Back => return false,
         }
         true
@@ -359,7 +387,7 @@ impl<G: Game> App<G> {
             chosen = Some(ResultsAction::Menu);
         }
         let Some(action) = chosen else { return };
-        self.sounds.push(Sfx::Click);
+        self.ui_sounds.push(Sfx::Click);
         match action {
             ResultsAction::SaveVideo => {
                 self.video_request = Some(VideoRequest::Save);
@@ -383,27 +411,43 @@ impl<G: Game> App<G> {
         }
     }
 
-    /// Advances the running game by one fixed step.
-    pub fn update(&mut self, dt: f32) {
-        if let Screen::Playing {
+    /// One simulation step of `steps` × `FIXED_DT` for the running game:
+    /// the input gathered since the last step is handed to the game once,
+    /// then it is updated `steps` times (fewer if it finishes). Does nothing
+    /// for `steps` = 0, so input waits for the next real step.
+    pub fn advance(&mut self, steps: u32) {
+        let Screen::Playing {
             game,
             paused: false,
         } = &mut self.screen
-        {
-            if game.finished().is_none() {
-                game.update(dt);
-                self.play_time += dt;
+        else {
+            return;
+        };
+        if steps == 0 || game.finished().is_some() {
+            return;
+        }
+        game.handle(&self.game_input.take());
+        for _ in 0..steps {
+            if game.finished().is_some() {
+                break;
             }
+            game.update(FIXED_DT);
+            self.play_time += FIXED_DT;
         }
     }
 
-    /// Sounds to play this frame: the game's and the menus'.
-    pub fn take_sounds(&mut self) -> Vec<Sfx> {
-        let mut sounds = std::mem::take(&mut self.sounds);
-        if let Screen::Playing { game, .. } = &mut self.screen {
-            sounds.extend(game.take_sounds());
+    /// The menus' sounds since the last call. They are played but never
+    /// recorded.
+    pub fn take_ui_sounds(&mut self) -> Vec<Sfx> {
+        std::mem::take(&mut self.ui_sounds)
+    }
+
+    /// The game's sounds since the last call, for playing and recording.
+    pub fn take_game_sounds(&mut self) -> Vec<Sfx> {
+        match &mut self.screen {
+            Screen::Playing { game, .. } => game.take_sounds(),
+            _ => Vec::new(),
         }
-        sounds
     }
 
     /// Shows the results once the game reports a finished level. Called
@@ -412,7 +456,7 @@ impl<G: Game> App<G> {
     pub fn end_round_if_finished(&mut self) {
         if let Screen::Playing { game, .. } = &self.screen {
             if let Some(result) = game.finished() {
-                self.sounds.push(Sfx::Success);
+                self.ui_sounds.push(Sfx::Success);
                 let level = self.level;
                 self.go(Screen::Results {
                     level,
@@ -463,10 +507,13 @@ mod tests {
     }
 
     /// One frame as `main` runs it, without drawing or recording.
+    /// One 60 Hz frame as `main` runs it in real time, without drawing or
+    /// recording: a new round's first frame does not simulate.
     fn frame(app: &mut TestApp, input: &Input) {
         app.handle(input);
-        app.update(FIXED_DT);
-        app.update(FIXED_DT);
+        if !app.take_round_started() {
+            app.advance(2);
+        }
         app.end_round_if_finished();
     }
 
@@ -485,19 +532,16 @@ mod tests {
         assert_eq!((app.round, app.level), (1, 1));
         frame(&mut app, &key(Key::Space)); // the example scores a point
         frame(&mut app, &Input::default());
-        assert!((app.play_time - 6.0 * FIXED_DT).abs() < 1e-6);
+        assert!((app.play_time - 4.0 * FIXED_DT).abs() < 1e-6);
         frame(&mut app, &key(Key::Enter)); // finishes the level
         assert_eq!(results(&app), Some((1, Some(RoundResult { score: 1 }))));
-        assert!(app.take_sounds().contains(&Sfx::Success));
+        assert!(app.take_ui_sounds().contains(&Sfx::Success));
 
         // Next round (the focus starts on it, recording is off).
         frame(&mut app, &key(Key::Enter));
         assert!(app.running_game().is_some());
         assert_eq!((app.round, app.level), (2, 2));
-        assert!(
-            (app.play_time - 2.0 * FIXED_DT).abs() < 1e-6,
-            "time restarts"
-        );
+        assert_eq!(app.play_time, 0.0, "time restarts at the first frame");
         frame(&mut app, &click(FINISH_BUTTON.center()));
         assert_eq!(results(&app), Some((2, Some(RoundResult { score: 0 }))));
 
@@ -628,7 +672,10 @@ mod tests {
 
             frame(&mut app, &key(Key::Down)); // recording
             frame(&mut app, &key(Key::Enter));
-            assert!(!app.settings.recording);
+            assert_eq!(app.settings.recording_mode, RecordingMode::Recording);
+            frame(&mut app, &key(Key::Left));
+            frame(&mut app, &key(Key::Left));
+            assert_eq!(app.settings.recording_mode, RecordingMode::Off);
             assert_eq!(app.settings_error, None);
             assert_eq!(settings::load(&path), app.settings, "saved on every change");
 
@@ -649,9 +696,41 @@ mod tests {
         app.screen = Screen::Settings;
         app.focus = 2;
         frame(&mut app, &key(Key::Enter));
-        assert!(!app.settings.recording, "the change still applies");
+        assert_eq!(
+            app.settings.recording_mode,
+            RecordingMode::Recording,
+            "the change still applies"
+        );
         assert!(app.settings_error.is_some());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A press in a frame without a simulation step (or while a video
+    /// frame waits) reaches the game once, at its next step.
+    #[test]
+    fn presses_wait_for_the_next_step_and_count_once() {
+        let mut app = app();
+        frame(&mut app, &key(Key::Enter)); // Play
+        app.handle(&key(Key::Space));
+        app.advance(0);
+        app.handle(&Input::default());
+        app.advance(0);
+        assert_eq!(app.play_time, 0.0, "no step yet");
+        app.advance(2);
+        app.advance(2);
+        app.handle(&key(Key::Enter)); // finish: the score is now final
+        app.advance(2);
+        app.end_round_if_finished();
+        assert_eq!(results(&app), Some((1, Some(RoundResult { score: 1 }))));
+    }
+
+    #[test]
+    fn menu_sounds_are_kept_apart_from_game_sounds() {
+        let mut app = app();
+        frame(&mut app, &key(Key::Enter)); // Play: a click
+        frame(&mut app, &key(Key::Space)); // the game's blip
+        assert_eq!(app.take_ui_sounds(), vec![Sfx::Click]);
+        assert_eq!(app.take_game_sounds(), vec![Sfx::Blip]);
     }
 
     #[test]

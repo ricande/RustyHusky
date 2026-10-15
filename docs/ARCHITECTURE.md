@@ -36,7 +36,8 @@ it and how recording works. For the current game's behaviour, see
 | `i18n.rs`     | ✓ | The framework's translation catalog, lookup in it and the game's `TEXTS`, the `t!` macro. |
 | `audio.rs`    |   | The synthesizer (window-free) and playback with the volume setting. |
 | `video.rs`    | ✓³ | FFmpeg process, frame clock, sound mixing, saving, file names. |
-| `capture.rs`  |   | Renders video frames off screen and drives a round's recording. |
+| `capture.rs`  |   | Renders video frames off screen and drives a round's recording in either recording mode. |
+| `pacing.rs`   | ✓ | `Lockstep`: the "Prioritize recording" timing, two physics steps per produced video frame. |
 | `screen.rs`   | ✓ | Picks the start window size from the screen's work area. |
 | `script.rs`   | ✓ | Script mode: text scripts as input, for repeatable UI checks. |
 
@@ -53,16 +54,29 @@ Macroquad. ³ needs `ffmpeg` at run time; its tests skip when it is missing.
    mapped to logical coordinates; in the letterbox bars it is `None`, so
    clicks there do nothing.
 3. **Handle.** `App::handle` runs the current screen: menu choices, settings,
-   pause (Esc/P), or `Game::handle` while the round runs.
-4. **Simulate.** The frame time (capped at 0.25 s) is added to an
-   accumulator, and `App::update(FIXED_DT)` runs as many fixed steps as fit.
-   Only a running, unpaused, unfinished game is updated.
-5. **Sounds.** `App::take_sounds` returns this frame's effects (game and
-   menus); they are played at the volume setting.
-6. **Capture.** `Capture::frame` records the running game (see below).
-7. **End of level.** `App::end_round_if_finished` switches to the results
-   once `Game::finished` returns a result – *after* the frame was recorded.
-8. **Draw.** `screens::draw` draws the current screen in the window.
+   pause (Esc/P). While the round runs, the input is *gathered* in
+   `App::game_input` (`Input::merge`) rather than handed to the game: the
+   game gets it at its next simulation step, so a press is never lost or
+   repeated, however many frames pass before that step.
+4. **Recording start.** `Capture::begin_frame` takes Save/Discard requests
+   and, when a round has started, starts its recording in the mode set in
+   the settings. It returns which timing this frame uses:
+   - **Real time** (Prioritize gameplay, Off, or no recording): the frame
+     time (capped at 0.25 s) is added to an accumulator, and
+     `App::advance(steps)` gives the game its input once and runs `steps`
+     fixed steps (none in a new round's first frame, which is video time 0).
+     The game's sounds are played and `Capture::gameplay_frame` records the
+     frame.
+   - **Video frames** (Prioritize recording): `Capture::lockstep_frame`
+     advances the game itself, see below.
+5. **Sounds.** The menus' sounds (`App::take_ui_sounds`) are played; they
+   are never recorded.
+6. **End of level.** `App::end_round_if_finished` switches to the results
+   once `Game::finished` returns a result – *after* the last frame was
+   recorded, and in Prioritize recording only once that frame has been
+   accepted by the encoder (`Capture::holding`).
+7. **Draw.** `screens::draw` draws the current screen in the window, then
+   `view::end_batch` (see *Text and the miniquad texture cache*).
 
 Closing the window or choosing Quit ends the loop normally, so `Capture` is
 dropped and cleans up.
@@ -83,11 +97,24 @@ dropped and cleans up.
 
 ## Time step
 
-`FIXED_DT` is 1/120 s. A frame runs `floor(accumulated / FIXED_DT)` updates,
-keeping the remainder for the next frame. Games keep their own clock in
-`update` (the example's moving dot does), never `get_time()`, so the
-recording – which follows the same frame times – shows what was played.
-Script mode uses a fixed frame time of 1/60 s, so runs are repeatable.
+`FIXED_DT` is 1/120 s. Games keep their own clock in `update` (the
+example's moving dot does), never `get_time()`, so the recording shows what
+was played. Script mode uses a fixed frame time of 1/60 s, so runs are
+repeatable. Where the steps come from depends on the recording mode:
+
+- **Real time** (Prioritize gameplay, Off): a frame runs
+  `floor(accumulated / FIXED_DT)` steps, keeping the remainder.
+- **Video frames** (Prioritize recording, `pacing::Lockstep`): every video
+  frame k is produced by `App::advance(2)` (except frame 0, which shows the
+  state before any step), drawn once and offered to the encoder once. Game
+  time is therefore exactly k/60 s at frame k. Production is limited by real
+  time (at most two frames per displayed frame, no time saved up beyond
+  that), so a fast machine plays at normal speed; when the encoder's queue
+  is full the picture waits in `Lockstep` and the game does not advance
+  until it is accepted. Nothing catches up afterwards.
+
+In both, the game's input waits in `App::game_input` until the next step,
+and a paused game advances neither game time, video time nor sound.
 
 ## Screens and the round life cycle
 
@@ -110,11 +137,12 @@ recording. `App::play_time` counts unpaused game time for the results.
 them, so `app.rs` stays window-free.
 
 1. **Start.** On a new `App::round`, `Capture` drops anything left from the
-   previous round. If recording is on in the settings and FFmpeg was found at
+   previous round. Unless the recording mode is Off, and if FFmpeg was found at
    startup (`video::check_ffmpeg`: the program answers within 5 s and lists
    libx264), it
-   starts a `video::Recorder`; otherwise the status is `Off` or
-   `Unavailable(reason)`.
+   starts a `video::Recorder`, plus a `Lockstep` in Prioritize recording;
+   otherwise the status is `Off` or `Unavailable(reason)`. The mode is read
+   here, so a change applies from the next round.
 2. **Frames.** For each frame where `App::running_game` is `Some` (playing,
    not paused), the game is drawn with `screens::draw_game` into a
    1080 × 1920 render target, read back as RGBA and queued (a bounded queue
@@ -126,11 +154,15 @@ them, so `app.rs` stays window-free.
    temporary `rustyhusky-rec-<pid>-<n>.mp4` in the system temp folder.
    `capture.rs` detects at startup whether the GPU returns rows bottom-up and
    adds `-vf vflip` if so.
-3. **Timing.** `video::FrameClock` turns frame times into an exact 60 fps
-   frame count: the first frame is at time 0; a picture is repeated when the
-   display is slower than 60 Hz and frames are skipped when it is faster.
-   Paused frames are not captured and do not advance the clock, so the pause
-   is cut out of the video. Each sound effect is stored with its clock time.
+3. **Timing.** In Prioritize gameplay, `video::FrameClock` turns frame times
+   into an exact 60 fps frame count: the first frame is at time 0; a picture
+   is repeated when the display is slower than 60 Hz and frames are skipped
+   when it is faster; each sound effect is stored with its clock time. In
+   Prioritize recording, every produced picture is exactly one frame and
+   each sound gets the time of the frame in which it happened (k/60 s).
+   In both, paused frames are not captured and advance nothing, and the
+   video's length is the number of frames queued / 60 s
+   (`Recorder::frames`), so sound and picture end together.
 4. **Stop.** On the frame the game reports `finished`, that frame is recorded
    and the recorder is closed; for an aborted round the recorder is closed
    on the frame the round is left. Closing runs on a worker thread
@@ -154,19 +186,25 @@ them, so `app.rs` stays window-free.
 FFmpeg may be missing, crash, or hang without exiting. Every case ends in a
 translated `VideoStatus` message and the game keeps running:
 
-- **Encoder hung or too slow while recording.** The main thread must stay
-  within its frame budget, the timeline must stay exact and memory must stay
-  bounded; all three hold only while the encoder keeps up. So
-  `Recorder::push_frame` waits at most `FRAME_WAIT` (2 ms) for room in the
-  queue (about 0.4 s of video). If there is none, the encoder has fallen
-  behind: it is killed, which also ends the writer thread, and the
-  recording fails with "could not keep up". Frames are never dropped,
-  because the video would then be shorter than its sound track. A hung
-  encoder is caught after about 0.4 s, one that is too slow once its
-  backlog passes the queue; either way the game never slows down.
+- **Prioritize gameplay: encoder hung or too slow.** The main thread must
+  never wait, the timeline must stay exact and memory must stay bounded; all
+  three hold only while the encoder keeps up. So `Recorder::push_frame`
+  offers the picture once (`try_send`) to the queue (about 0.4 s of video).
+  If it is full, the encoder has fallen behind: it is killed, which also
+  ends the writer thread, and the recording fails with "could not keep up".
+  Frames are never dropped, because the video would then be shorter than its
+  sound track.
+- **Prioritize recording: slow versus hung.** A full queue is normal here;
+  the picture waits in `Lockstep` and is offered again every displayed
+  frame, never blocking. The writer thread counts the frames it has passed
+  to ffmpeg (`Recorder::written`): while that count grows the encoder is
+  merely slow and the game keeps waiting (the window says so after 1 s);
+  if it does not grow for `pacing::STALL_TIMEOUT` (5 s) the encoder is
+  considered hung, killed, and the round goes on in real time. An abort
+  drops the waiting picture at once.
 - **Crashed encoder.** The queue disconnects; the next frame notices it.
-- In both cases `Recorder::failed` is true; `Capture` then closes the
-  recorder at once (the REC marker disappears) and the results screen shows
+- In every case `Capture` closes the recorder at once; the window shows
+  "Recording stopped" instead of the REC marker and the results screen shows
   the reason.
 - **Other waits** go through `video::Process`, which drains stdout and stderr
   on reader threads (a full pipe can never block ffmpeg) and kills the
@@ -176,11 +214,28 @@ translated `VideoStatus` message and the game keeps running:
   makes every running wait kill its ffmpeg at once; discarding a recorder
   (`Recorder::cancel`) also kills instead of waiting. Threads stuck on a pipe
   are given a 1 s grace and then left behind rather than joined.
-- Tests (Unix) feed fake encoders at real-time pace: `sh -c "exec sleep 30"`
-  never reads, a `dd`/`sleep` loop reads about 15 pictures per second, and
-  `cat` keeps up. They check that no frame waits more than 50 ms (2 ms plus
-  slack for busy machines), that the first two are stopped and killed with
-  no temporary file left, and that the third writes every frame.
+- Tests (Unix; the slow ones need GNU `dd`, so Linux) use fake encoders:
+  `sh -c "exec sleep 30"` never reads, a `dd`/`sleep` loop reads slowly but
+  steadily, and `cat` keeps up. In `video.rs` they check Prioritize gameplay
+  (no frame blocks; slow and hung encoders are stopped and killed; nothing
+  is left behind). In `pacing.rs` a test game writes its step and press
+  counts into every picture, and the tests check that the fast and the slow
+  encoder give byte-identical videos with exactly two steps per frame, the
+  same sound times, presses counted once (also one made while a picture
+  waits), no frame produced or repeated during a pause, a hung encoder
+  detected without blocking, and an immediate abort.
+
+### Text and the miniquad texture cache
+
+miniquad 0.4.11's `delete_texture` does not clear its texture-binding cache.
+When the font atlas fills up, macroquad deletes its texture and creates a
+larger one, which often gets the same GL name. If the cache still believes
+that name is bound, the new texture's pixels are never uploaded and every
+glyph is drawn as a black block from then on. Whether it happens depends
+only on which texture was drawn last before the atlas grows, so any mode
+could hit it (the recording tour did). `view::end_batch` draws an invisible
+plain rectangle as the last draw before each flush – after the window and
+after every video frame – so the atlas is never the cached binding.
 
 ## Translations
 

@@ -1,5 +1,5 @@
 //! The player's settings, stored as `settings.json` in the data folder:
-//! language, volume and whether rounds are recorded.
+//! language, volume and the recording mode.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,6 +10,34 @@ use crate::config::{self, APP_ID, APP_NAME};
 use crate::i18n::Lang;
 use crate::t;
 
+/// How rounds are recorded. Takes effect from the next round.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecordingMode {
+    /// The game follows real time; the video keeps up or recording stops.
+    #[default]
+    Gameplay,
+    /// Every video frame is produced from exactly two physics steps; the
+    /// game may run slower than real time, the video never does.
+    Recording,
+    /// No recording.
+    Off,
+}
+
+impl RecordingMode {
+    const ALL: [RecordingMode; 3] = [
+        RecordingMode::Gameplay,
+        RecordingMode::Recording,
+        RecordingMode::Off,
+    ];
+
+    /// The next (`step` = 1) or previous (`step` = -1) mode, wrapping around.
+    pub fn cycle(self, step: i32) -> RecordingMode {
+        let i = Self::ALL.iter().position(|&m| m == self).unwrap_or(0) as i32;
+        Self::ALL[(i + step).rem_euclid(Self::ALL.len() as i32) as usize]
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -17,8 +45,7 @@ pub struct Settings {
     pub language: String,
     /// Sound volume in percent, 0–100.
     pub volume: u8,
-    /// Record every round automatically.
-    pub recording: bool,
+    pub recording_mode: RecordingMode,
 }
 
 impl Default for Settings {
@@ -26,9 +53,18 @@ impl Default for Settings {
         Settings {
             language: Lang::En.code().to_owned(),
             volume: 80,
-            recording: true,
+            recording_mode: RecordingMode::default(),
         }
     }
+}
+
+/// Fields of older `settings.json` versions.
+#[derive(Deserialize)]
+struct Legacy {
+    /// Before `recording_mode`: recording on/off.
+    recording: Option<bool>,
+    /// Present in newer files, which then ignore `recording`.
+    recording_mode: Option<serde_json::Value>,
 }
 
 /// Volume changes in steps of this many percent.
@@ -82,10 +118,29 @@ pub fn env_lang() -> Option<Lang> {
 /// The saved settings. A missing or broken file gives the defaults, and
 /// missing or invalid fields get their default values.
 pub fn load(path: &Path) -> Settings {
-    let mut s: Settings = fs::read_to_string(path)
+    fs::read_to_string(path)
         .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default();
+        .map(|text| parse(&text))
+        .unwrap_or_default()
+}
+
+/// Settings from the text of `settings.json`. Older files with
+/// `"recording": true/false` become Prioritize gameplay / Off.
+fn parse(text: &str) -> Settings {
+    let Ok(mut s) = serde_json::from_str::<Settings>(text) else {
+        return Settings::default();
+    };
+    if let Ok(Legacy {
+        recording: Some(on),
+        recording_mode: None,
+    }) = serde_json::from_str::<Legacy>(text)
+    {
+        s.recording_mode = if on {
+            RecordingMode::Gameplay
+        } else {
+            RecordingMode::Off
+        };
+    }
     s.volume = s.volume.min(100);
     if Lang::from_code(&s.language).is_none() {
         s.language = Settings::default().language;
@@ -118,7 +173,7 @@ mod tests {
         let path = dir.join("sub/settings.json");
         let defaults = load(&path);
         assert_eq!(defaults, Settings::default());
-        assert!(defaults.recording, "recording is on by default");
+        assert_eq!(defaults.recording_mode, RecordingMode::Gameplay, "default");
         assert_eq!(defaults.lang(), Lang::En, "English by default");
 
         let mut s = Settings {
@@ -126,11 +181,12 @@ mod tests {
             ..Settings::default()
         };
         s.change_volume(-3);
-        s.recording = false;
+        s.recording_mode = RecordingMode::Recording;
         save(&path, &s).unwrap();
         assert_eq!(load(&path), s);
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.contains("\"volume\": 50"), "{text}");
+        assert!(text.contains("\"recording_mode\": \"recording\""), "{text}");
         assert!(!path.with_extension("json.tmp").exists());
         fs::remove_dir_all(dir).unwrap();
     }
@@ -144,7 +200,11 @@ mod tests {
         assert_eq!(load(&path), Settings::default());
         fs::write(&path, r#"{ "volume": 30 }"#).unwrap();
         let s = load(&path);
-        assert_eq!((s.volume, s.recording, s.lang()), (30, true, Lang::En));
+        let mode = s.recording_mode;
+        assert_eq!(
+            (s.volume, mode, s.lang()),
+            (30, RecordingMode::Gameplay, Lang::En)
+        );
         fs::write(&path, r#"{ "volume": 300, "language": "xx" }"#).unwrap();
         // 300 does not fit a u8, so the whole file is ignored.
         assert_eq!(load(&path), Settings::default());
@@ -155,6 +215,44 @@ mod tests {
         fs::write(dir.join("file"), "x").unwrap();
         assert!(save(&dir.join("file/settings.json"), &s).is_err());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn old_recording_flags_are_migrated() {
+        let mode = |text: &str| parse(text).recording_mode;
+        assert_eq!(mode(r#"{ "recording": true }"#), RecordingMode::Gameplay);
+        assert_eq!(mode(r#"{ "recording": false }"#), RecordingMode::Off);
+        assert_eq!(
+            mode(r#"{ "volume": 40 }"#),
+            RecordingMode::Gameplay,
+            "default"
+        );
+        // The new field wins over the old one.
+        let both = r#"{ "recording": false, "recording_mode": "recording" }"#;
+        assert_eq!(mode(both), RecordingMode::Recording);
+        let full = parse(r#"{ "language": "sv", "volume": 30, "recording": false }"#);
+        assert_eq!(
+            (full.lang(), full.volume),
+            (Lang::Sv, 30),
+            "other fields kept"
+        );
+        // Saving writes only the new field.
+        let text = serde_json::to_string(&full).unwrap();
+        assert!(text.contains("\"recording_mode\":\"off\"") && !text.contains("\"recording\":"));
+        // An unknown mode is ignored like any broken value.
+        assert_eq!(
+            mode(r#"{ "recording_mode": "sometimes" }"#),
+            RecordingMode::default()
+        );
+    }
+
+    #[test]
+    fn recording_modes_cycle_both_ways() {
+        let m = RecordingMode::Gameplay;
+        assert_eq!(m.cycle(1), RecordingMode::Recording);
+        assert_eq!(m.cycle(1).cycle(1), RecordingMode::Off);
+        assert_eq!(m.cycle(-1), RecordingMode::Off);
+        assert_eq!(m.cycle(3), m);
     }
 
     #[test]

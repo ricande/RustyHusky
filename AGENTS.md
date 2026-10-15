@@ -103,6 +103,13 @@ cargo run --release
   `RUSTYHUSKY_FFMPEG`: the round must go on at full speed and the results
   must show the error. Check a slow encoder the same way with a fake that
   reads frames at, say, 30 per second.
+- Check both recording modes: put `{"recording_mode": "recording"}` (or
+  `"gameplay"`) in `settings.json` in `RUSTYHUSKY_DATA_DIR`. To see
+  Prioritize recording wait for a slow encoder, point `RUSTYHUSKY_FFMPEG` at
+  a wrapper that passes stdin on to the real ffmpeg at, say, 20 frames per
+  second. A saved video must be 60/1 fps with every frame unique
+  (`ffmpeg -i f.mp4 -map 0:v -f framemd5 -` and count distinct hashes) and
+  as long as its sound track.
 - Check missing FFmpeg with `RUSTYHUSKY_FFMPEG=/nonexistent`, and that no
   `rustyhusky-rec-*` files are left in the temp folder afterwards.
 

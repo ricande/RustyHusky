@@ -86,7 +86,11 @@ Saved as `settings.json` in the data folder and loaded at the next start:
 | --------- | ------------------------- | ------- |
 | Language  | English, Svenska          | English |
 | Volume    | 0–100 % in steps of 10 %  | 80 %    |
-| Recording | On / Off                  | On      |
+| Recording mode | Prioritize gameplay, Prioritize recording, Off | Prioritize gameplay |
+
+A change of recording mode applies from the next round. Files from earlier
+versions with `"recording": true` / `false` are read as Prioritize gameplay /
+Off.
 
 Data folder: `$XDG_DATA_HOME/rustyhusky` (normally
 `~/.local/share/rustyhusky`) on Linux, `~/Library/Application
@@ -95,13 +99,31 @@ broken file gives the defaults.
 
 ## Video recording
 
-When recording is on and FFmpeg is available, every round is recorded:
+Unless the recording mode is Off and as long as FFmpeg is available, every
+round is recorded. The two modes differ in what gives way when the computer
+cannot keep up:
+
+| | Prioritize gameplay (default) | Prioritize recording |
+| --- | --- | --- |
+| Game speed | Real time, always | Follows the video: each video frame is exactly two physics steps (2 × 1/120 s). If frames cannot be produced 60 times per second, the game runs slower. |
+| Video | 60 fps on the game's clock. Pictures are repeated or skipped to match the display's frame rate, so motion is only as smooth as the display rate. | Exactly one new picture per video frame, so motion is always smooth and at normal speed. |
+| Encoder too slow | The recording stops with a message; the round goes on. | The game waits for it ("Waiting for the video encoder…" after 1 s). The window, pause and abort keep working. |
+| Encoder hung | Stopped once its queue (about 0.4 s) is full. | Stopped after 5 s without progress; the round goes on in real time. |
+
+Example: if the computer only manages 30 video frames per second in
+Prioritize recording, a minute of play takes about two minutes, and the saved
+file is one minute long and plays smoothly at 60 fps.
+
+Both modes:
 
 - **What:** only the game view, rendered separately at 1080 × 1920 (9:16),
   60 fps, H.264 – independent of the window size, without window borders,
   letterbox bars, the REC marker, the pause menu or the results screen.
-- **When:** from the first frame of the round until the frame the level is
-  finished (or the round is aborted). Paused time is left out of the video.
+- **When:** the first video frame (time 0) shows the round before any
+  physics step; the last one shows the frame the level was finished (or the
+  last frame before an abort). The video is exactly as long as its frames:
+  number of frames / 60 s. Paused time adds nothing to game time, video or
+  sound.
 - **Afterwards:** the results screen shows "Finishing the video…" while the
   encoder finishes, then **Save video** and **Discard video**. Until you save,
   the video is only a temporary file in the system's temp folder. Leaving the
@@ -111,20 +133,21 @@ When recording is on and FFmpeg is available, every round is recorded:
   `%USERPROFILE%\Videos`). Existing files are never overwritten; `-2`, `-3` …
   is added instead. The results screen shows the saved path.
 - **Sound:** the video has a stereo AAC sound track with the game's sound
-  effects, mixed from the recorded effect times so it stays in sync. It is
+  effects, placed by game time (in Prioritize recording, the time of the
+  video frame in which they happened), so it stays in sync however long the
+  recording took. It is
   always mixed at full effect volume, whatever the volume setting. Sounds
   from outside the game (other programs, the microphone) are not recorded,
   and menu sounds are never part of the video.
 - **Errors:** a missing FFmpeg, an encoder that crashes, hangs or is too
   slow, or a file that cannot be written is shown as a message on the
   results screen; the game keeps working. A failed save can be retried.
-- **The game never waits for the encoder:** frames go through a bounded
-  queue of about 0.4 s, and each frame waits at most 2 ms for room. An
-  encoder that hangs or cannot encode 1080 × 1920 at 60 fps in real time
-  fills the queue; the recording is then stopped with a message and the
-  round continues at full speed. Frames are never dropped, so a saved video
-  is always complete and in sync. The FFmpeg check at startup is limited to
-  5 s, finishing and saving a video to 60 s.
+- **Never stuck:** frames go through a bounded queue of 24 pictures (about
+  0.4 s, at most about 200 MB). Frames are never dropped, so a saved video
+  is always complete and in sync, or there is none. When a recording fails,
+  the window shows "Recording stopped", the results show why, FFmpeg is
+  stopped and the round continues in real time. The FFmpeg check at startup
+  is limited to 5 s, finishing and saving a video to 60 s.
 - **Clean-up:** temporary files are removed on Discard, on leaving the
   results, and when the program closes (also via the window's close button,
   which stops any running FFmpeg at once, including a save in progress).
@@ -192,10 +215,17 @@ prefix is `config::ENV_PREFIX` (`RUSTYHUSKY` here):
 - Recording reads each frame back from the GPU (8 MB per frame), which costs
   some frame time while recording. The video is still exactly 60 fps
   (pictures are repeated or skipped to match game time).
-- Recording needs a CPU that encodes 1080 × 1920 H.264 (`veryfast`) at 60 fps
-  in real time; on a slower or very busy machine it is stopped with a
-  message rather than slowing the game. The frame queue can use up to about
-  200 MB while the encoder is behind.
+- In Prioritize gameplay, recording needs a CPU that encodes 1080 × 1920
+  H.264 (`veryfast`) at 60 fps in real time; on a slower or very busy machine
+  it is stopped with a message rather than slowing the game. Prioritize
+  recording works on slower machines, at the cost of a slower game while
+  recording. The frame queue can use up to about 200 MB while the encoder is
+  behind.
+- In Prioritize gameplay, motion in the video is only as smooth as the
+  display's frame rate: at 30 Hz every picture is shown twice. The file is
+  60 fps either way.
+- Text drawing works around a texture-cache bug in miniquad 0.4.11
+  (`view::end_batch`); see docs/ARCHITECTURE.md.
 - The video sound contains only the game's synthesized effects.
 - The start window size is fitted to the screen on X11/XWayland (via `xprop`
   and `xrandr`); elsewhere it starts at 360 × 640. It can always be resized.

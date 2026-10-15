@@ -2,6 +2,13 @@
 //! screen at 1080 × 1920 and manages the current round's recording, from
 //! the start of the round to Save or Discard on the results screen.
 //!
+//! Two timings, chosen per round by the recording mode:
+//! - Prioritize gameplay: the caller advances the game by real time and
+//!   `gameplay_frame` records what is shown, repeating or skipping pictures
+//!   so the video follows game time at exactly 60 fps.
+//! - Prioritize recording: `lockstep_frame` advances the game itself, two
+//!   physics steps per video frame (`pacing::Lockstep`).
+//!
 //! Slow work – finishing the encoder and saving – runs on worker threads,
 //! so the game never waits for ffmpeg; progress is reported in `App::video`.
 
@@ -13,6 +20,8 @@ use macroquad::prelude::*;
 use crate::app::{App, VideoRequest, VideoStatus};
 use crate::audio::Sfx;
 use crate::game::Game;
+use crate::pacing::{Lockstep, Next};
+use crate::settings::RecordingMode;
 use crate::t;
 use crate::video::{self, Recorder, Recording, HEIGHT, WIDTH};
 use crate::view::{View, BACKDROP};
@@ -34,6 +43,8 @@ pub struct Capture {
     unavailable: Option<String>,
     round: u64,
     recorder: Option<Recorder>,
+    /// Set while a "Prioritize recording" recording runs.
+    lockstep: Option<Lockstep>,
     /// The next captured frame is the recording's first (at time 0).
     first_frame: bool,
     finishing: Option<Job<Result<Recording, String>>>,
@@ -61,6 +72,7 @@ impl Capture {
             unavailable,
             round: app.round,
             recorder: None,
+            lockstep: None,
             first_frame: false,
             finishing: None,
             recording: None,
@@ -73,13 +85,53 @@ impl Capture {
         self.recorder.is_some()
     }
 
-    /// Call once per frame after the game has been updated and before
-    /// `App::end_round_if_finished`. `sounds` are this frame's effects.
-    pub fn frame<G: Game>(&mut self, app: &mut App<G>, frame_time: f32, sounds: &[Sfx]) {
+    /// Call first in every frame, after `App::handle`: takes Save/Discard
+    /// requests and starts a recording when a round starts. Returns true
+    /// if this frame runs in "Prioritize recording" timing, where
+    /// `lockstep_frame` advances the game instead of the caller.
+    pub fn begin_frame<G>(&mut self, app: &mut App<G>) -> bool {
         self.handle_request(app);
         if app.round != self.round {
             self.new_round(app);
         }
+        self.recorder.is_some() && self.lockstep.is_some()
+    }
+
+    /// A picture of the level's last frame is still waiting for the encoder;
+    /// the results must wait for it.
+    pub fn holding(&self) -> bool {
+        self.lockstep.as_ref().is_some_and(Lockstep::holding)
+    }
+
+    /// Prioritize recording: the game has been waiting for the encoder this
+    /// long without progress, if it waits at all.
+    pub fn encoder_wait(&self) -> Option<std::time::Duration> {
+        self.lockstep.as_ref()?.stalled_for()
+    }
+
+    /// Prioritize recording: advances the game by produced video frames.
+    /// `play` plays the game's sounds.
+    pub fn lockstep_frame<G: Game>(
+        &mut self,
+        app: &mut App<G>,
+        frame_time: f32,
+        play: impl FnMut(Sfx),
+    ) {
+        let (Some(rec), Some(lockstep)) = (&mut self.recorder, &mut self.lockstep) else {
+            return;
+        };
+        let (target, camera) = (&self.target, &self.camera);
+        let render = |game: &G| draw_video_frame(target, camera, game);
+        match lockstep.frame(app, rec, f64::from(frame_time), render, play) {
+            Next::Continue => {}
+            Next::Finish | Next::Failed => self.finish(app),
+        }
+    }
+
+    /// Prioritize gameplay: call after the game has been advanced by real
+    /// time and before `App::end_round_if_finished`. `sounds` are the
+    /// game's sounds of this frame.
+    pub fn gameplay_frame<G: Game>(&mut self, app: &mut App<G>, frame_time: f32, sounds: &[Sfx]) {
         if self.recorder.is_some() {
             let stop = match app.running_game() {
                 Some(game) => {
@@ -97,6 +149,10 @@ impl Capture {
                 self.finish(app);
             }
         }
+    }
+
+    /// Call last in every frame: picks up finished saves and recordings.
+    pub fn end_frame<G>(&mut self, app: &mut App<G>) {
         self.poll_jobs(app);
     }
 
@@ -114,12 +170,7 @@ impl Capture {
             rec.add_sound(sfx.index());
         }
         if copies > 0 {
-            set_camera(&self.camera);
-            clear_background(BACKDROP);
-            crate::screens::draw_game(game, &View::fit(WIDTH as f32, HEIGHT as f32));
-            set_default_camera();
-            let image = self.target.texture.get_texture_data();
-            rec.push_frame(image.bytes, copies);
+            rec.push_frame(draw_video_frame(&self.target, &self.camera, game), copies);
         }
     }
 
@@ -133,7 +184,9 @@ impl Capture {
         if let Some(old) = self.recording.take() {
             old.discard();
         }
-        app.video = if !app.settings.recording {
+        let mode = app.settings.recording_mode;
+        self.lockstep = (mode == RecordingMode::Recording).then(Lockstep::default);
+        app.video = if mode == RecordingMode::Off {
             VideoStatus::Off
         } else if let Some(why) = &self.unavailable {
             VideoStatus::Unavailable(why.clone())
@@ -151,6 +204,7 @@ impl Capture {
 
     /// Stops recording; the encoder finishes the file on a worker thread.
     fn finish<G>(&mut self, app: &mut App<G>) {
+        self.lockstep = None;
         let Some(rec) = self.recorder.take() else {
             return;
         };
@@ -261,6 +315,16 @@ fn spawn_with_lang<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) ->
         crate::i18n::set_lang(lang);
         f()
     })
+}
+
+/// Draws the game at 1080 × 1920 off screen and reads the picture back.
+fn draw_video_frame<G: Game>(target: &RenderTarget, camera: &Camera2D, game: &G) -> Vec<u8> {
+    set_camera(camera);
+    clear_background(BACKDROP);
+    crate::screens::draw_game(game, &View::fit(WIDTH as f32, HEIGHT as f32));
+    crate::view::end_batch();
+    set_default_camera();
+    target.texture.get_texture_data().bytes
 }
 
 /// Draws red in the top half and checks which end of the read-back image

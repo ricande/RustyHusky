@@ -9,6 +9,7 @@ use crate::app::{
     menu_buttons, pause_buttons, results_buttons, settings_buttons, App, Screen, VideoStatus,
 };
 use crate::game::Game;
+use crate::settings::RecordingMode;
 use crate::t;
 use crate::ui::Button;
 use crate::view::{
@@ -18,7 +19,15 @@ use crate::view::{
 
 /// Draws the current screen. `time` (seconds) drives blinking; `recording`
 /// shows the REC marker, which only ever appears in the window.
-pub fn draw<G: Game>(app: &App<G>, v: &View, pointer: Option<Vec2>, recording: bool, time: f32) {
+/// `waiting` is set while the game has waited a while for the encoder.
+pub fn draw<G: Game>(
+    app: &App<G>,
+    v: &View,
+    pointer: Option<Vec2>,
+    recording: bool,
+    waiting: bool,
+    time: f32,
+) {
     clear_background(BACKDROP);
     let blink = time.rem_euclid(1.0) < 0.6;
     match &app.screen {
@@ -28,6 +37,14 @@ pub fn draw<G: Game>(app: &App<G>, v: &View, pointer: Option<Vec2>, recording: b
             draw_game(game, v);
             if recording {
                 draw_rec_marker(v, blink || *paused);
+            } else if matches!(app.video, VideoStatus::Failed(_)) {
+                // Recording broke off; the details are on the results.
+                let w = v.text_width(t!("hud.rec_failed"), 16.0);
+                v.text(t!("hud.rec_failed"), FIELD_W - 20.0 - w, 89.0, 16.0, ERROR);
+            }
+            if waiting && !*paused {
+                let text = t!("hud.waiting_encoder");
+                v.text_centered(text, FIELD_W / 2.0, 120.0, 20.0, ACCENT);
             }
             if *paused {
                 draw_pause(app, v, pointer);
@@ -93,7 +110,13 @@ fn draw_settings<G>(app: &App<G>, v: &View, pointer: Option<Vec2>) {
     draw_buttons(v, &settings_buttons(&app.settings), app.focus, pointer);
     let mut y = 480.0;
     let note = with_alpha(TEXT, 0.75);
-    y = v.text_wrapped_centered(t!("settings.recording_note"), y, 18.0, note);
+    let mode_note = match app.settings.recording_mode {
+        RecordingMode::Gameplay => t!("settings.note_gameplay"),
+        RecordingMode::Recording => t!("settings.note_recording"),
+        RecordingMode::Off => t!("settings.note_off"),
+    };
+    y = v.text_wrapped_centered(mode_note, y, 18.0, note);
+    y = v.text_wrapped_centered(t!("settings.note_next_round"), y + 6.0, 18.0, note);
     if let Some(why) = &app.recording_unavailable {
         y = v.text_wrapped_centered(why, y + 10.0, 18.0, ERROR);
     }

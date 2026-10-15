@@ -11,6 +11,7 @@ mod config;
 mod example;
 mod game;
 mod i18n;
+mod pacing;
 mod screen;
 mod screens;
 mod script;
@@ -146,22 +147,47 @@ async fn main() {
             get_frame_time().min(MAX_FRAME_TIME)
         };
         time += frame_time;
-        accumulator += frame_time;
-        while accumulator >= FIXED_DT {
-            app.update(FIXED_DT);
-            accumulator -= FIXED_DT;
+        let volume = app.settings.volume;
+        let round_started = app.take_round_started();
+        if capture.begin_frame(&mut app) {
+            // Prioritize recording: game time follows produced video frames.
+            accumulator = 0.0;
+            capture.lockstep_frame(&mut app, frame_time, |s| sounds.play(s, volume));
+        } else {
+            // Real time. A new round's first frame shows the state before
+            // any step, so its video starts at exactly time 0.
+            accumulator = if round_started {
+                0.0
+            } else {
+                accumulator + frame_time
+            };
+            let steps = (accumulator / FIXED_DT).floor();
+            accumulator -= steps * FIXED_DT;
+            app.advance(steps as u32);
+            let sfx = app.take_game_sounds();
+            for &s in &sfx {
+                sounds.play(s, volume);
+            }
+            // Records this frame of the game (drawn off screen) before the
+            // window is drawn, and stops at the end of the level.
+            capture.gameplay_frame(&mut app, frame_time, &sfx);
+        }
+        for s in app.take_ui_sounds() {
+            sounds.play(s, volume);
+        }
+        capture.end_frame(&mut app);
+        // The results wait until the level's last video frame is accepted.
+        if !capture.holding() {
+            app.end_round_if_finished();
         }
 
-        let sfx = app.take_sounds();
-        for &s in &sfx {
-            sounds.play(s, app.settings.volume);
-        }
-        // Records this frame of the game (drawn off screen) before the
-        // window is drawn, and stops at the end of the level.
-        capture.frame(&mut app, frame_time, &sfx);
-        app.end_round_if_finished();
-
-        screens::draw(&app, &view, input.pointer, capture.is_recording(), time);
+        // A game that stands still for a second is explained in the window.
+        let waiting = capture
+            .encoder_wait()
+            .is_some_and(|w| w.as_secs_f32() >= 1.0);
+        let recording = capture.is_recording();
+        screens::draw(&app, &view, input.pointer, recording, waiting, time);
+        view::end_batch();
 
         let mut quit = app.quit || is_quit_requested();
         if let Some(f) = &scripted {

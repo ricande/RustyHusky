@@ -6,27 +6,24 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-
-- **A hung or slow encoder could freeze or slow the game.** If FFmpeg kept
-  running but stopped reading frames, the game waited forever for room in
-  the frame queue; if it encoded slower than real time, the game slowed down
-  to its pace. Now each frame waits at most 2 ms; if the bounded queue
-  (about 0.4 s, repeated pictures stored once) is still full, FFmpeg is
-  stopped, the round continues at full speed and the results screen shows
-  "could not keep up". No frames are dropped, so a saved video is always
-  complete and in sync.
-- The FFmpeg check at startup has a 5 s time limit (before, a hanging
-  `ffmpeg -encoders` kept the window from opening).
-- Discarding a recording, starting a new round and closing the program no
-  longer wait for FFmpeg (up to 60 s before); they stop it at once.
-- FFmpeg's output is drained on reader threads, so a full pipe cannot block
-  it.
-- The documentation claimed that a hanging encoder could never lock the
-  game; that was only true when finishing and saving.
-
 ### Added
 
+- **Recording mode** in the settings, replacing recording on/off:
+  - *Prioritize gameplay* (default): as before, the game runs in real time;
+    the main thread now never waits for the encoder at all. If it cannot
+    keep up, the recording stops with a message.
+  - *Prioritize recording*: each video frame is made from exactly two
+    physics steps, drawn once and queued once; the game does not advance
+    until the encoder has accepted the frame. A slow computer plays slower,
+    but the video is always smooth at normal speed. A slow encoder (still
+    writing frames) is waited for, with a note in the window after 1 s; one
+    that writes nothing for 5 s is stopped and the round goes on in real
+    time. Sounds are placed by game time.
+  - *Off*.
+  The mode applies from the next round, and the settings screen explains
+  each one. Old `settings.json` files are migrated (`"recording": true` →
+  Prioritize gameplay, `false` → Off).
+- "Recording stopped" in the window when a recording fails during a round.
 - Regression tests (Unix) for an encoder that hangs without exiting, one
   that is slower than real time, one that keeps up, a hanging startup
   check, cancelling, shutdown and full pipes.
@@ -46,6 +43,13 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ### Changed
 
+- Game input is gathered until the game's next simulation step, so a press
+  is delivered exactly once even in frames without a step.
+- A round's first frame does not simulate, so the first video frame shows
+  the state at time 0 in both modes.
+- Menu sounds are kept apart from game sounds and are never recorded (the
+  Play click used to land at the start of the video).
+- Long button labels shrink to fit their button.
 - The minimum Rust version is 1.87, not 1.82 as documented before: the
   dependency `fontdue` (via Macroquad) needs 1.87. Found by the new CI job.
 - Keys are defined in one table, `ui::KEYS` (key, key code, script name),
@@ -61,6 +65,28 @@ All notable changes to RustyHusky are documented here. The format follows
 - README and repository description state the project's purpose: portrait
   games and gameplay videos for YouTube Shorts, TikTok and Instagram Reels.
   Videos are published by the user; there is no automatic upload.
+
+### Fixed
+
+- Text could turn into black blocks for the rest of the run when the font
+  atlas grew while the font texture was the last one drawn (a texture-cache
+  bug in miniquad 0.4.11); worked around with `view::end_batch`.
+- **A hung or slow encoder could freeze or slow the game.** If FFmpeg kept
+  running but stopped reading frames, the game waited forever for room in
+  the frame queue; if it encoded slower than real time, the game slowed down
+  to its pace. Now no frame waits for the encoder; if the bounded queue
+  (about 0.4 s, repeated pictures stored once) is full, FFmpeg is
+  stopped, the round continues at full speed and the results screen shows
+  "could not keep up". No frames are dropped, so a saved video is always
+  complete and in sync.
+- The FFmpeg check at startup has a 5 s time limit (before, a hanging
+  `ffmpeg -encoders` kept the window from opening).
+- Discarding a recording, starting a new round and closing the program no
+  longer wait for FFmpeg (up to 60 s before); they stop it at once.
+- FFmpeg's output is drained on reader threads, so a full pipe cannot block
+  it.
+- The documentation claimed that a hanging encoder could never lock the
+  game; that was only true when finishing and saving.
 
 ## [0.1.0] - 2026-10-15
 

@@ -177,6 +177,20 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
+/// Ends a batch of drawing with a draw that does not use the font atlas.
+/// Call last before the drawing is flushed (camera change, end of frame).
+///
+/// Works around miniquad 0.4.11: `delete_texture` does not clear its
+/// texture-binding cache. When the font atlas grows, macroquad deletes its
+/// texture and creates a new one that often gets the same GL name; if the
+/// cache still believes that name is bound, the new texture's pixels are
+/// never uploaded and all text turns into black blocks for good. Leaving a
+/// plain (white-texture) draw last means the atlas is never the cached
+/// binding when that happens.
+pub fn end_batch() {
+    draw_rectangle(0.0, 0.0, 1.0, 1.0, Color::new(0.0, 0.0, 0.0, 0.0));
+}
+
 /// The default field background: a dark vertical gradient with a faint grid.
 pub fn draw_background(v: &View) {
     const BANDS: usize = 24;
@@ -211,7 +225,13 @@ pub fn draw_button(v: &View, rect: Rect, label: &str, hot: bool, enabled: bool) 
     v.rect(rect.x, rect.y, rect.w, rect.h, with_alpha(bg, alpha));
     let border = with_alpha(NEON, if hot && enabled { 1.0 } else { 0.5 * alpha });
     v.rect_lines(rect.x, rect.y, rect.w, rect.h, 2.0, border);
-    let size = (rect.h * 0.5).min(28.0);
+    // Shrink a long label to fit the button.
+    let mut size = (rect.h * 0.5).min(28.0);
+    let room = rect.w - 24.0;
+    let width = v.text_width(label, size);
+    if width > room {
+        size *= room / width;
+    }
     let cx = rect.x + rect.w / 2.0;
     let baseline = rect.y + rect.h / 2.0 + size * 0.32;
     v.text_centered(label, cx, baseline, size, with_alpha(TEXT, alpha));
