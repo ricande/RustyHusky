@@ -7,6 +7,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Tests that need ffmpeg fail instead of skipping when it is missing.
+  REQUIRE_FFMPEG: 1
 
 jobs:
   check:

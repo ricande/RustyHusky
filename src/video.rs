@@ -720,6 +720,22 @@ pub(crate) mod tests {
         LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Whether the tests that need a real ffmpeg can run. Without it they
+    /// are skipped, unless `REQUIRE_FFMPEG` is set (as in CI): then a
+    /// missing ffmpeg is a failure instead of a silent skip.
+    pub(crate) fn ffmpeg_for_tests() -> bool {
+        match check_ffmpeg() {
+            Ok(()) => true,
+            Err(e) if std::env::var_os("REQUIRE_FFMPEG").is_some() => {
+                panic!("REQUIRE_FFMPEG is set, but: {e}")
+            }
+            Err(_) => {
+                eprintln!("ffmpeg missing: skipping this test");
+                false
+            }
+        }
+    }
+
     /// Queues a picture, waiting for room: tests that produce frames faster
     /// than real time use this to test the file, not the machine's speed.
     pub(crate) fn push_waiting(rec: &mut Recorder, mut rgba: Vec<u8>, copies: u64) {
@@ -835,8 +851,7 @@ pub(crate) mod tests {
     #[test]
     fn recording_is_saved_as_1080x1920_60fps_mp4_with_sound() {
         let _turn = heavy();
-        if check_ffmpeg().is_err() {
-            eprintln!("ffmpeg missing: skipping the video test");
+        if !ffmpeg_for_tests() {
             return;
         }
         let mut rec = Recorder::start(false).unwrap();
@@ -911,7 +926,7 @@ pub(crate) mod tests {
     #[test]
     fn failed_save_is_reported_and_can_be_retried() {
         let _turn = heavy();
-        if check_ffmpeg().is_err() {
+        if !ffmpeg_for_tests() {
             return;
         }
         let mut rec = Recorder::start(false).unwrap();
@@ -937,7 +952,7 @@ pub(crate) mod tests {
     #[test]
     fn an_encoder_that_dies_gives_an_error_not_a_hang() {
         let _turn = heavy();
-        if check_ffmpeg().is_err() {
+        if !ffmpeg_for_tests() {
             return;
         }
         let mut rec = Recorder::start(false).unwrap();
@@ -1133,7 +1148,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_recording_without_frames_is_an_error_and_leaves_no_file() {
-        if check_ffmpeg().is_err() {
+        if !ffmpeg_for_tests() {
             return;
         }
         let rec = Recorder::start(false).unwrap();
