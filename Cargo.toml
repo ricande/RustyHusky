@@ -1,0 +1,18 @@
+[package]
+name = "rustyhusky"
+version = "0.1.0"
+edition = "2021"
+description = "A small starter template for portrait 2D games in Rust with Macroquad"
+license = "MIT"
+repository = "https://github.com/ricande/rustyhusky"
+readme = "README.md"
+publish = false
+
+[dependencies]
+macroquad = { version = "0.4", features = ["audio"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.dev.package."*"]
+# Optimise dependencies even in debug builds so `cargo run` stays smooth.
+opt-level = 2

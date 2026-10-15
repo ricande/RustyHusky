@@ -1,0 +1,163 @@
+# RustyHusky
+
+A small, reusable starter template for 2D games in Rust with
+[Macroquad](https://macroquad.rs). It gives a new game everything around the
+game itself, so you can start on the gameplay right away:
+
+- Portrait 9:16 view with a logical resolution of 540 × 960, scaled to any
+  window without cropping or stretching, with correct mouse coordinates
+- Main menu (Play, Settings, Quit), pause menu, results screen
+- Settings for language, volume and recording, saved between runs
+- English and Swedish through one translation catalog
+- Automatic recording of every round as a 1080 × 1920, 60 fps MP4 with sound,
+  which you save or discard afterwards
+- A fixed simulation time step
+- A placeholder game that shows "Your game here", to be replaced by yours
+
+The template grew out of [RustOut](https://github.com/ricande/RustOut), a
+Breakout-style game; its general parts were kept and the Breakout parts
+removed. All graphics are drawn in code and the sounds are synthesized at
+startup, so there are no asset files.
+
+## Requirements
+
+- Rust (stable, 1.82 or later) via [rustup](https://rustup.rs)
+- Linux: development packages for X11, ALSA and OpenGL, e.g. on Debian/Ubuntu:
+  `sudo apt install libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev`
+- Windows and macOS need nothing extra to build.
+- To record videos: [FFmpeg](https://ffmpeg.org) with the libx264 encoder, in
+  `PATH` (Debian/Ubuntu: `sudo apt install ffmpeg`; macOS: `brew install
+  ffmpeg`; Windows: an FFmpeg build such as the one from gyan.dev, with its
+  `bin` folder in `PATH`). It is only needed at run time, not to build.
+  Without it everything works except recording, and the settings and results
+  screens say why.
+
+## Running
+
+```bash
+cargo run --release
+```
+
+Tests (flow, settings, translations, scaling, recording pipeline) run without
+a window; the video tests are skipped when FFmpeg is missing:
+
+```bash
+cargo test
+```
+
+## Playing
+
+| Screen   | Keys / mouse |
+| -------- | ------------ |
+| Menus    | Mouse, or ↑/↓ and Enter (Space also chooses). Esc goes back. |
+| Settings | ←/→ change the focused setting; click the left or right half of the volume button to lower or raise it. |
+| Round    | Esc or P pauses. In the pause menu: Resume (also Esc/P) or Abort round. |
+| Example  | Space: +1 point. Enter or the **Finish level** button: finish the level. |
+
+Flow: **main menu → round → results → next round or main menu**. An aborted
+round also ends on the results screen (without "Next round").
+
+## Settings
+
+Saved as `settings.json` in the data folder and loaded at the next start:
+
+| Setting   | Values                    | Default |
+| --------- | ------------------------- | ------- |
+| Language  | English, Svenska          | English |
+| Volume    | 0–100 % in steps of 10 %  | 80 %    |
+| Recording | On / Off                  | On      |
+
+Data folder: `$XDG_DATA_HOME/rustyhusky` (normally
+`~/.local/share/rustyhusky`) on Linux, `~/Library/Application
+Support/RustyHusky` on macOS, `%APPDATA%\RustyHusky` on Windows. A missing or
+broken file gives the defaults.
+
+## Video recording
+
+When recording is on and FFmpeg is available, every round is recorded:
+
+- **What:** only the game view, rendered separately at 1080 × 1920 (9:16),
+  60 fps, H.264 – independent of the window size, without window borders,
+  letterbox bars, the REC marker, the pause menu or the results screen.
+- **When:** from the first frame of the round until the frame the level is
+  finished (or the round is aborted). Paused time is left out of the video.
+- **Afterwards:** the results screen shows "Finishing the video…" while the
+  encoder finishes, then **Save video** and **Discard video**. Until you save,
+  the video is only a temporary file in the system's temp folder. Leaving the
+  results screen without saving discards it.
+- **Where:** `~/Videos/RustyHusky/rustyhusky-<date>-<time>.mp4` (UTC; the
+  Linux folder follows `XDG_VIDEOS_DIR`, macOS uses `~/Movies`, Windows
+  `%USERPROFILE%\Videos`). Existing files are never overwritten; `-2`, `-3` …
+  is added instead. The results screen shows the saved path.
+- **Sound:** the video has a stereo AAC sound track with the game's sound
+  effects, mixed from the recorded effect times so it stays in sync. It is
+  always mixed at full effect volume, whatever the volume setting. Sounds
+  from outside the game (other programs, the microphone) are not recorded,
+  and menu sounds are never part of the video.
+- **Errors:** a missing FFmpeg, an encoder that fails or a file that cannot
+  be written is shown as a message; the game keeps working. A failed save
+  can be retried. FFmpeg is stopped after 60 s if it ever hangs.
+- **Clean-up:** temporary files are removed on Discard, on leaving the
+  results, and when the program closes (also via the window's close button).
+  Leftovers after a crash are removed at the next start once they are a day
+  old.
+
+## Building your own game
+
+1. Create a module, e.g. `src/mygame.rs`, with a type that implements
+   `game::Game` (see `src/game.rs` and the example in `src/example.rs`):
+   - `new(level)` – start a round (level 1, 2, 3 … with "Next round")
+   - `handle(&Input)` – once per frame: pressed and held keys, mouse position
+     and clicks, all in logical coordinates (Esc/P are taken for pausing)
+   - `update(dt)` – game logic with the fixed step `FIXED_DT` (1/120 s)
+   - `draw(&View)` – draw in logical 540 × 960 coordinates through `View`
+   - `take_sounds()` – sound effects started since the last call
+   - `finished()` – `Some(RoundResult { score })` when the level is done
+2. Add `mod mygame;` and set `type ActiveGame = mygame::MyGame;` in
+   `src/main.rs`.
+3. Put every text the player sees in the catalog in `src/i18n.rs` (English
+   and Swedish) and use `t!("key")`.
+4. Add sounds to `audio::Sfx` and keys to `ui::Key` (plus the table in
+   `main.rs`) if you need more.
+5. Delete `src/example.rs` and describe your rules in
+   [docs/GAME_RULES.md](docs/GAME_RULES.md).
+
+Menus, settings, pause, results, scaling and recording need no changes.
+
+## Environment variables
+
+Handy for testing without touching your real settings and videos:
+
+| Variable               | Effect                                            |
+| ---------------------- | ------------------------------------------------- |
+| `RUSTYHUSKY_DATA_DIR`  | folder for `settings.json`                        |
+| `RUSTYHUSKY_VIDEO_DIR` | folder for saved videos                           |
+| `RUSTYHUSKY_LANG`      | `en` or `sv`, overrides the saved language for this run |
+| `RUSTYHUSKY_FFMPEG`    | path to the ffmpeg program (a wrong path simulates missing FFmpeg) |
+| `RUSTYHUSKY_WINDOW`    | force a window size, e.g. `1000x640`              |
+| `RUSTYHUSKY_SCRIPT`    | run a UI script instead of real input (see [AGENTS.md](AGENTS.md)) |
+| `RUSTYHUSKY_SHOTS`     | folder for the script's screenshots (default `shots`) |
+
+## Documentation
+
+| Document | Contents |
+| -------- | -------- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Modules, coordinates, time step, i18n, recording flow |
+| [docs/GAME_RULES.md](docs/GAME_RULES.md) | The example game's behaviour; the place for your game's rules |
+| [AGENTS.md](AGENTS.md) | Rules and checks for contributors and AI agents |
+| [CHANGELOG.md](CHANGELOG.md) | Changes per version |
+
+## Known limitations
+
+- Recording needs FFmpeg with libx264 at run time.
+- Recording reads each frame back from the GPU (8 MB per frame); on slow
+  machines this can lower the frame rate while recording. The video is still
+  exactly 60 fps (pictures are repeated or skipped to match game time).
+- The video sound contains only the game's synthesized effects.
+- The start window size is fitted to the screen on X11/XWayland (via `xprop`
+  and `xrandr`); elsewhere it starts at 360 × 640. It can always be resized.
+- The built-in font covers Latin text (English and Swedish), not every script.
+
+## License
+
+MIT – see [LICENSE](LICENSE). Based on RustOut, © 2026 ricande, also MIT.

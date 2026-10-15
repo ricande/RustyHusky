@@ -1,0 +1,33 @@
+# A tour of the whole flow, for checking the UI and the recording:
+#   RUSTYHUSKY_SCRIPT=scripts/ui_tour.txt RUSTYHUSKY_SHOTS=/tmp/shots \
+#   RUSTYHUSKY_DATA_DIR=/tmp/rh-data RUSTYHUSKY_VIDEO_DIR=/tmp/rh-videos \
+#   cargo run --release
+# Positions are logical coordinates (540 x 960); see the button functions in
+# src/app.rs. One frame is 1/60 s.
+
+5   shot 01-menu
+6   click 270 590             # Settings
+10  shot 02-settings
+11  key esc
+15  click 270 526             # Play
+20  key space                 # the example scores a point (with a sound)
+60  key space
+90  shot 03-playing
+100 key esc                   # pause: these frames are left out of the video
+110 shot 04-paused
+130 key esc                   # resume
+200 key enter                 # finish the level
+201 shot 05-results-finishing
+240 shot 06-results-ready
+241 click 152 586             # Save video
+300 shot 07-saved
+301 click 270 726             # Next round
+360 key p
+361 shot 08-paused-round-2
+365 click 270 550             # Abort round
+400 shot 09-aborted
+401 click 388 586             # Discard video
+405 shot 10-discarded
+406 click 270 726             # Main menu (the only button after an abort)
+410 shot 11-menu
+411 quit

@@ -1,0 +1,19 @@
+# Checks letterboxing and the mouse conversion in a wide window, using
+# window-pixel clicks that go through the same conversion as the real mouse:
+#   RUSTYHUSKY_WINDOW=1000x640 RUSTYHUSKY_SCRIPT=scripts/window_check.txt ...
+# In 1000 x 640 the field is 360 x 640 at x = 320 (scale 2/3), so logical
+# (x, y) is window (320 + x * 2/3, y * 2/3).
+
+5   shot w01-menu
+6   wclick 100 350            # left side bar: ignored
+8   wclick 900 350            # right side bar: ignored
+10  shot w02-still-menu
+11  wclick 500 351            # Play (logical 270, 526)
+40  shot w03-playing
+41  wclick 500 485            # Finish level (logical 270, 728)
+80  shot w04-results
+81  wclick 579 391            # Discard video (logical 388, 586)
+85  shot w05-discarded
+86  wclick 500 527            # Main menu (logical 270, 790)
+90  shot w06-menu
+91  quit
