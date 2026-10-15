@@ -1,6 +1,14 @@
 # RustyHusky
 
 [![CI](https://github.com/ricande/RustyHusky/actions/workflows/ci.yml/badge.svg)](https://github.com/ricande/RustyHusky/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ricande/RustyHusky)](https://github.com/ricande/RustyHusky/releases)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+[![Rust 1.87+](https://img.shields.io/badge/Rust-1.87%2B-orange?logo=rust)](Cargo.toml)
+[![CI platforms: Linux, Windows, macOS](https://img.shields.io/badge/CI-Linux%20%7C%20Windows%20%7C%20macOS-blue)](.github/workflows/ci.yml)
+
+[![Video: 1080 × 1920 at 60 fps](https://img.shields.io/badge/video-1080%20%C3%97%201920%20%40%2060%20fps-red)](#video-recording)
+[![Portrait 9:16](https://img.shields.io/badge/portrait-9%3A16-purple)](#video-recording)
+[![Use this template](https://img.shields.io/badge/GitHub-Use%20this%20template-2ea44f?logo=github)](https://github.com/new?template_name=RustyHusky&template_owner=ricande)
 
 **Build. Play. Record. Share.**
 
