@@ -6,8 +6,15 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-15
+
 ### Added
 
+- The repository is a GitHub template; the README explains how to start a
+  game from it ("Use this template") and what the GPL means for it.
+- CI runs clippy and the tests, including real FFmpeg recordings, on
+  Windows and macOS as well as Linux. With `REQUIRE_FFMPEG` set (as in CI),
+  a test that needs FFmpeg fails instead of being skipped.
 - **Recording mode** in the settings, replacing recording on/off:
   - *Prioritize gameplay* (default): as before, the game runs in real time;
     the main thread now never waits for the encoder at all. If it cannot
@@ -126,3 +133,7 @@ The first version of the template, built from the general parts of
 - All Breakout code: paddle, balls, blocks, bonuses, levels, the level
   editor and level files, and the save-video dialog (videos are now saved
   with an automatic, unique file name).
+
+[Unreleased]: https://github.com/ricande/RustyHusky/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ricande/RustyHusky/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/ricande/RustyHusky/releases/tag/v0.1.0

@@ -156,6 +156,14 @@ Both modes:
 
 ## Building your own game
 
+Start a new repository from this one: **Use this template** on GitHub, or
+
+```bash
+gh repo create my-game --template ricande/RustyHusky --public --clone
+```
+
+The new repository gets all files but none of the history. Then:
+
 1. Name your project in `src/config.rs` (`APP_NAME`, `APP_ID`,
    `ENV_PREFIX`) and in `Cargo.toml`. The window title, menu title, data and
    video folders, file names and environment variables follow.
@@ -182,6 +190,12 @@ Both modes:
 
 Menus, settings, pause, results, scaling, recording and translations of the
 framework's texts need no changes.
+
+Also start a fresh `CHANGELOG.md` and rewrite `docs/GAME_RULES.md` and the
+README for your game. RustyHusky is GPL-3.0-or-later: a game that contains
+its code and is shared with others must be released under the GPL as well.
+Keep `LICENSE`, `LICENSES/` and `THIRD_PARTY_NOTICES.md`, and add the
+licenses of your own assets. Videos you record are not covered by the code license.
 
 ## Environment variables
 
@@ -227,8 +241,9 @@ prefix is `config::ENV_PREFIX` (`RUSTYHUSKY` here):
   60 fps either way.
 - RustyHusky builds against a patched copy of miniquad 0.4.11 in `vendor/`
   that fixes black text rectangles (macroquad#1006); see
-  [docs/UPSTREAM_FIXES.md](docs/UPSTREAM_FIXES.md). Building it prints two
-  warnings from miniquad's own, unchanged code.
+  [docs/UPSTREAM_FIXES.md](docs/UPSTREAM_FIXES.md). Building it prints one
+  or two warnings (depending on the platform) from miniquad's own, unchanged
+  code.
 - The video sound contains only the game's synthesized effects.
 - The start window size is fitted to the screen on X11/XWayland (via `xprop`
   and `xrandr`); elsewhere it starts at 360 × 640. It can always be resized.
