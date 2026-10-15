@@ -160,7 +160,7 @@ const CATALOG: &[Text] = &[
     ("video.status_discarded", "The video was discarded.", "Videon kastades."),
     ("video.no_ffmpeg", "FFmpeg was not found, so rounds cannot be recorded. Install FFmpeg to record videos.", "FFmpeg hittades inte, så omgångar kan inte spelas in. Installera FFmpeg för att spela in video."),
     ("video.no_answer", "FFmpeg did not respond, so rounds cannot be recorded.", "FFmpeg svarade inte, så omgångar kan inte spelas in."),
-    ("video.ffmpeg_stalled", "the video encoder stopped responding and was stopped", "videokodaren slutade svara och stoppades"),
+    ("video.encoder_behind", "the video encoder could not keep up (it stopped or is too slow), so the recording was stopped", "videokodaren hann inte med (den stannade eller är för långsam), så inspelningen stoppades"),
     ("video.no_x264", "FFmpeg has no libx264 encoder, so rounds cannot be recorded.", "FFmpeg saknar kodaren libx264, så omgångar kan inte spelas in."),
     ("video.start_failed", "Recording could not start: {error}", "Inspelningen kunde inte starta: {error}"),
     ("video.record_failed", "Recording failed: {error}", "Inspelningen misslyckades: {error}"),

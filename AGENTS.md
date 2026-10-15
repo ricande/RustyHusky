@@ -100,8 +100,9 @@ cargo run --release
   expect `1080,1920,60/1,…` and an AAC stream.
 - Check a hanging encoder with a fake ffmpeg that answers `-encoders` with
   `libx264` and otherwise runs `exec sleep 600`, set via
-  `RUSTYHUSKY_FFMPEG`: the round must go on after a hitch of at most 3 s and
-  the results must show the error.
+  `RUSTYHUSKY_FFMPEG`: the round must go on at full speed and the results
+  must show the error. Check a slow encoder the same way with a fake that
+  reads frames at, say, 30 per second.
 - Check missing FFmpeg with `RUSTYHUSKY_FFMPEG=/nonexistent`, and that no
   `rustyhusky-rec-*` files are left in the temp folder afterwards.
 

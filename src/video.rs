@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -27,12 +28,14 @@ use crate::t;
 pub const WIDTH: u32 = 1080;
 pub const HEIGHT: u32 = 1920;
 pub const FPS: u32 = 60;
-/// Frames waiting for the encoder (8 MB each). Bounded, so a slow encoder
-/// cannot use up memory.
-const QUEUE_FRAMES: usize = 4;
-/// If the queue takes no frame for this long, the encoder counts as hung
-/// and is stopped. This is the longest the game can ever wait for it.
-const STALL_TIMEOUT: Duration = Duration::from_secs(3);
+/// Pictures waiting for the encoder (8 MB each, however often they are
+/// repeated): about 0.4 s of video, at most about 200 MB, used only while
+/// the encoder is behind. Bounded, so memory stays bounded.
+const QUEUE_PICTURES: usize = 24;
+/// Longest the game waits in one frame for room in the queue, well within
+/// a 60 fps frame (16.7 ms). If there is still no room, the encoder cannot
+/// keep up and the recording is stopped.
+const FRAME_WAIT: Duration = Duration::from_millis(2);
 /// Longest wait for ffmpeg to finish or save a file (on a worker thread).
 const FINISH_TIMEOUT: Duration = Duration::from_secs(60);
 /// Longest wait for the ffmpeg check at startup.
@@ -283,20 +286,21 @@ fn run_ffmpeg(args: &[&str]) -> Result<(), String> {
     }
 }
 
+/// A picture and how many video frames show it.
+type Picture = (Arc<Vec<u8>>, u64);
+
 /// An ongoing recording.
 pub struct Recorder {
     process: Process,
-    frames_tx: Option<SyncSender<Vec<u8>>>,
+    frames_tx: Option<SyncSender<Picture>>,
     writer: Option<JoinHandle<std::io::Result<()>>>,
     path: PathBuf,
     clock: FrameClock,
     hits: Vec<SoundHit>,
-    /// When the frame queue last accepted a frame.
-    last_progress: Instant,
-    /// How long the queue may stay full before the encoder counts as hung.
-    stall_timeout: Duration,
-    /// The encoder stopped taking frames and was stopped.
-    stalled: bool,
+    /// Longest wait for room in the queue per frame (`FRAME_WAIT`).
+    frame_wait: Duration,
+    /// The encoder fell behind (hung or too slow) and was stopped.
+    behind: bool,
 }
 
 impl Recorder {
@@ -325,10 +329,12 @@ impl Recorder {
         let mut process = Process::spawn(cmd)?;
         let mut stdin = process.child.stdin.take().expect("piped stdin");
         // A small, bounded queue: encoding runs in parallel with the game.
-        let (tx, rx) = sync_channel::<Vec<u8>>(QUEUE_FRAMES);
+        let (tx, rx) = sync_channel::<Picture>(QUEUE_PICTURES);
         let writer = std::thread::spawn(move || {
-            for frame in rx {
-                stdin.write_all(&frame)?;
+            for (picture, copies) in rx {
+                for _ in 0..copies {
+                    stdin.write_all(&picture)?;
+                }
             }
             Ok(())
         });
@@ -339,9 +345,8 @@ impl Recorder {
             path,
             clock: FrameClock::default(),
             hits: Vec::new(),
-            last_progress: Instant::now(),
-            stall_timeout: STALL_TIMEOUT,
-            stalled: false,
+            frame_wait: FRAME_WAIT,
+            behind: false,
         })
     }
 
@@ -350,51 +355,43 @@ impl Recorder {
         self.clock.advance(dt)
     }
 
-    /// Queues the current picture `copies` times (RGBA, `WIDTH` × `HEIGHT`).
+    /// Queues the current picture for `copies` video frames (RGBA,
+    /// `WIDTH` × `HEIGHT`).
     ///
-    /// While the encoder makes progress the game waits for room in the
-    /// queue, so no frame is lost and sound stays in sync. If the queue
-    /// takes no frame for `stall_timeout`, the encoder is stopped and the
-    /// recording fails (`failed`); the game never waits longer than that.
+    /// The game waits at most `FRAME_WAIT` for room in the queue. If there
+    /// is none, the encoder has fallen behind (it hangs or cannot encode in
+    /// real time). Frames are never dropped, since that would make the video
+    /// shorter than the sound; instead the encoder is stopped and the
+    /// recording fails (`failed`). So the video is either complete or absent.
     pub fn push_frame(&mut self, rgba: Vec<u8>, copies: u64) {
         debug_assert_eq!(rgba.len(), (WIDTH * HEIGHT * 4) as usize);
-        let mut frame = Some(rgba);
-        for i in 0..copies {
-            let Some(tx) = &self.frames_tx else { return };
-            let mut data = if i + 1 == copies {
-                frame.take().unwrap_or_default()
-            } else {
-                frame.clone().unwrap_or_default()
-            };
-            loop {
-                match tx.try_send(data) {
-                    Ok(()) => {
-                        self.last_progress = Instant::now();
-                        break;
-                    }
-                    Err(TrySendError::Full(back)) => {
-                        if self.last_progress.elapsed() >= self.stall_timeout {
-                            self.stall();
-                            return;
-                        }
-                        data = back;
-                        std::thread::sleep(Duration::from_millis(1));
-                    }
-                    Err(TrySendError::Disconnected(_)) => {
-                        // ffmpeg has stopped; `finish` reports why.
-                        self.frames_tx = None;
-                        return;
-                    }
+        let Some(tx) = &self.frames_tx else { return };
+        if copies == 0 {
+            return;
+        }
+        let deadline = Instant::now() + self.frame_wait;
+        let mut picture = (Arc::new(rgba), copies);
+        loop {
+            match tx.try_send(picture) {
+                Ok(()) => return,
+                Err(TrySendError::Full(back)) if Instant::now() < deadline => {
+                    picture = back;
+                    std::thread::sleep(Duration::from_micros(200));
+                }
+                Err(TrySendError::Full(_)) => {
+                    // Stopping the encoder also ends the writer thread.
+                    self.behind = true;
+                    self.frames_tx = None;
+                    self.process.kill();
+                    return;
+                }
+                Err(TrySendError::Disconnected(_)) => {
+                    // ffmpeg has stopped; `finish` reports why.
+                    self.frames_tx = None;
+                    return;
                 }
             }
         }
-    }
-
-    /// The encoder hangs: stop it, which also ends the writer thread.
-    fn stall(&mut self) {
-        self.stalled = true;
-        self.frames_tx = None;
-        self.process.kill();
     }
 
     /// The encoder stopped (crashed or hung) and no more frames can be
@@ -417,8 +414,8 @@ impl Recorder {
         self.frames_tx = None;
         let waited = self.process.wait(FINISH_TIMEOUT, &SHUTDOWN);
         let wrote = self.writer.take().and_then(|w| join_within(w, PIPE_GRACE));
-        if self.stalled {
-            return Err(t!("video.ffmpeg_stalled").into());
+        if self.behind {
+            return Err(t!("video.encoder_behind").into());
         }
         let exit = waited?;
         if !exit.status.success() {
@@ -639,6 +636,14 @@ pub fn display_path(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard};
+
+    /// Tests that encode video or measure waiting take turns, so they do
+    /// not starve each other of CPU on small test machines.
+    fn heavy() -> MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     #[test]
     fn frame_clock_gives_exactly_60_frames_per_second() {
@@ -734,11 +739,14 @@ mod tests {
     /// check the file with ffprobe. Skipped where ffmpeg is not installed.
     #[test]
     fn recording_is_saved_as_1080x1920_60fps_mp4_with_sound() {
+        let _turn = heavy();
         if check_ffmpeg().is_err() {
             eprintln!("ffmpeg missing: skipping the video test");
             return;
         }
         let mut rec = Recorder::start(false).unwrap();
+        // Frames come faster than real time here; let the test wait.
+        rec.frame_wait = Duration::from_secs(10);
         let mut frame = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
         let mut total = rec.frames_due(0.0);
         rec.push_frame(frame.clone(), total);
@@ -809,6 +817,7 @@ mod tests {
 
     #[test]
     fn failed_save_is_reported_and_can_be_retried() {
+        let _turn = heavy();
         if check_ffmpeg().is_err() {
             return;
         }
@@ -834,6 +843,7 @@ mod tests {
 
     #[test]
     fn an_encoder_that_dies_gives_an_error_not_a_hang() {
+        let _turn = heavy();
         if check_ffmpeg().is_err() {
             return;
         }
@@ -848,15 +858,19 @@ mod tests {
         assert!(!path.exists(), "no temporary file is left");
     }
 
+    /// An encoder run by `sh -c script`, fed frames on stdin.
+    #[cfg(unix)]
+    fn fake_encoder(script: &str) -> Recorder {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", script]);
+        Recorder::spawn(cmd, temp_path("mp4")).unwrap()
+    }
+
     /// A stand-in for an encoder that starts but never reads its input
     /// and never exits.
     #[cfg(unix)]
     fn hanging_encoder() -> Recorder {
-        let mut cmd = Command::new("sh");
-        cmd.args(["-c", "exec sleep 30"]);
-        let mut rec = Recorder::spawn(cmd, temp_path("mp4")).unwrap();
-        rec.stall_timeout = Duration::from_millis(300);
-        rec
+        fake_encoder("exec sleep 30")
     }
 
     #[cfg(unix)]
@@ -868,31 +882,89 @@ mod tests {
             .is_ok_and(|s| !s.success())
     }
 
+    /// Feeds `rec` one picture per 1/60 s of real time, like the game, for
+    /// up to `seconds`. Returns the longest time one `push_frame` took.
+    #[cfg(unix)]
+    fn play_in_real_time(rec: &mut Recorder, seconds: f64) -> Duration {
+        let frame = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
+        let mut longest = Duration::ZERO;
+        let start = Instant::now();
+        let mut n = 0;
+        while start.elapsed().as_secs_f64() < seconds && !rec.failed() {
+            let copies = rec.frames_due(if n == 0 { 0.0 } else { 1.0 / 60.0 });
+            let t = Instant::now();
+            rec.push_frame(frame.clone(), copies);
+            longest = longest.max(t.elapsed());
+            n += 1;
+            let next = Duration::from_secs_f64(n as f64 / 60.0);
+            if let Some(rest) = next.checked_sub(start.elapsed()) {
+                std::thread::sleep(rest);
+            }
+        }
+        longest
+    }
+
+    /// A frame may wait `FRAME_WAIT`; allow for a busy test machine.
+    #[cfg(unix)]
+    const MAX_PUSH: Duration = Duration::from_millis(50);
+
     /// Regression test: an encoder that hangs without exiting must not
-    /// freeze the game. The game waits at most `stall_timeout`, the encoder
-    /// is killed and the recording fails with a clear message.
+    /// freeze the game. Each frame waits at most `FRAME_WAIT`, then the
+    /// encoder is killed and the recording fails with a clear message.
     #[cfg(unix)]
     #[test]
     fn a_hanging_encoder_is_stopped_instead_of_freezing_the_game() {
+        let _turn = heavy();
         let mut rec = hanging_encoder();
         let (pid, path) = (rec.process.child.id(), rec.path.clone());
-        let started = Instant::now();
-        for _ in 0..20 {
-            let n = rec.frames_due(1.0 / 60.0);
-            rec.push_frame(vec![0; (WIDTH * HEIGHT * 4) as usize], n);
-        }
-        let waited = started.elapsed();
-        assert!(
-            waited < Duration::from_secs(2),
-            "the game waited {waited:?}"
-        );
+        let longest = play_in_real_time(&mut rec, 3.0);
+        assert!(longest < MAX_PUSH, "one frame waited {longest:?}");
         assert!(rec.failed(), "the hang is detected");
         assert!(process_is_gone(pid), "the encoder is killed");
         let started = Instant::now();
         let err = rec.finish().unwrap_err();
         assert!(started.elapsed() < Duration::from_secs(2));
-        assert!(err.contains("stopped responding"), "{err}");
+        assert!(err.contains("could not keep up"), "{err}");
         assert!(!path.exists(), "no temporary file is left");
+    }
+
+    /// An encoder that makes progress but slower than real time (about 15
+    /// pictures per second) must not slow the game down either: the
+    /// recording is stopped instead of dropping frames or growing the queue.
+    #[cfg(unix)]
+    #[test]
+    fn a_slow_encoder_stops_the_recording_without_slowing_the_game() {
+        let _turn = heavy();
+        let mut rec = fake_encoder(
+            "while dd of=/dev/null bs=1M count=8 iflag=fullblock 2>/dev/null; do sleep 0.06; done",
+        );
+        let pid = rec.process.child.id();
+        let longest = play_in_real_time(&mut rec, 5.0);
+        assert!(longest < MAX_PUSH, "one frame waited {longest:?}");
+        assert!(rec.failed(), "falling behind is detected");
+        assert!(process_is_gone(pid));
+        assert!(rec.finish().unwrap_err().contains("could not keep up"));
+    }
+
+    /// An encoder that keeps up is never stopped, and repeated pictures are
+    /// written as separate frames.
+    #[cfg(unix)]
+    #[test]
+    fn an_encoder_that_keeps_up_records_every_frame() {
+        let _turn = heavy();
+        let out = temp_path("raw");
+        let mut rec = fake_encoder(&format!("cat > '{}'", out.display()));
+        let longest = play_in_real_time(&mut rec, 1.0);
+        let kept_up = !rec.failed();
+        rec.push_frame(vec![0; (WIDTH * HEIGHT * 4) as usize], 3);
+        let frames = rec.clock.frames() + 3;
+        let finished = rec.finish().map(Recording::discard);
+        let bytes = std::fs::metadata(&out).map(|m| m.len());
+        // Clean up before checking, so a failure leaves no 300 MB file.
+        let _ = std::fs::remove_file(&out);
+        assert!(longest < MAX_PUSH, "one frame waited {longest:?}");
+        assert!(kept_up && finished.is_ok(), "{finished:?}");
+        assert_eq!(bytes.unwrap(), frames * u64::from(WIDTH * HEIGHT * 4));
     }
 
     #[cfg(unix)]
