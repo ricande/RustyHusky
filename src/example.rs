@@ -59,6 +59,8 @@ pub struct ExampleGame {
     score: u32,
     done: bool,
     sounds: Vec<Sfx>,
+    /// The mouse, kept from `handle` so that `draw` can show hover.
+    pointer: Option<macroquad::math::Vec2>,
 }
 
 impl Game for ExampleGame {
@@ -72,10 +74,12 @@ impl Game for ExampleGame {
             score: 0,
             done: false,
             sounds: Vec::new(),
+            pointer: None,
         }
     }
 
     fn handle(&mut self, input: &Input) {
+        self.pointer = input.pointer;
         if self.done {
             return;
         }
@@ -116,7 +120,8 @@ impl Game for ExampleGame {
         v.circle(dot, 10.0, ACCENT);
         v.text_centered(t!("example.title"), cx, 300.0, 52.0, TEXT);
 
-        draw_button(v, FINISH_BUTTON, t!("example.finish"), false, true);
+        let hover = self.pointer.is_some_and(|p| FINISH_BUTTON.contains(p));
+        draw_button(v, FINISH_BUTTON, t!("example.finish"), hover, true);
         let help = with_alpha(TEXT, 0.7);
         v.text_wrapped_centered(t!("example.help"), 860.0, 20.0, help);
     }

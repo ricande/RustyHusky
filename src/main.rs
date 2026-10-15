@@ -185,7 +185,7 @@ async fn main() {
         let waiting = capture
             .encoder_wait()
             .is_some_and(|w| w.as_secs_f32() >= 1.0);
-        let recording = capture.is_recording();
+        let recording = capture.recorded_seconds();
         screens::draw(&app, &view, input.pointer, recording, waiting, time);
 
         let mut quit = app.quit || is_quit_requested();

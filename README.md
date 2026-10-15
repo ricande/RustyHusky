@@ -132,6 +132,9 @@ Both modes:
   Linux folder follows `XDG_VIDEOS_DIR`, macOS uses `~/Movies`, Windows
   `%USERPROFILE%\Videos`). Existing files are never overwritten; `-2`, `-3` …
   is added instead. The results screen shows the saved path.
+- **REC marker:** while recording, the window shows "● REC 0:42", the
+  length of the video so far (platforms limit clip length). It is never
+  part of the video.
 - **Sound:** the video has a stereo AAC sound track with the game's sound
   effects, placed by game time (in Prioritize recording, the time of the
   video frame in which they happened), so it stays in sync however long the

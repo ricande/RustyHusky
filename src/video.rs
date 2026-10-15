@@ -421,6 +421,11 @@ impl Recorder {
         }
     }
 
+    /// Length of the video recorded so far, in seconds.
+    pub fn seconds(&self) -> f64 {
+        self.frames as f64 / FPS as f64
+    }
+
     /// Video frames ffmpeg has taken so far (grows while it makes progress).
     pub fn written(&self) -> u64 {
         self.written.load(Ordering::Relaxed)

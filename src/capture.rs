@@ -81,8 +81,10 @@ impl Capture {
         }
     }
 
-    pub fn is_recording(&self) -> bool {
-        self.recorder.is_some()
+    /// Length of the running recording in seconds, if one runs. Shown in
+    /// the window only, never drawn into the video.
+    pub fn recorded_seconds(&self) -> Option<f64> {
+        self.recorder.as_ref().map(Recorder::seconds)
     }
 
     /// Call first in every frame, after `App::handle`: takes Save/Discard

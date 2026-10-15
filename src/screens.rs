@@ -24,7 +24,7 @@ pub fn draw<G: Game>(
     app: &App<G>,
     v: &View,
     pointer: Option<Vec2>,
-    recording: bool,
+    recording: Option<f64>,
     waiting: bool,
     time: f32,
 ) {
@@ -35,8 +35,8 @@ pub fn draw<G: Game>(
         Screen::Settings => draw_settings(app, v, pointer),
         Screen::Playing { game, paused } => {
             draw_game(game, v);
-            if recording {
-                draw_rec_marker(v, blink || *paused);
+            if let Some(seconds) = recording {
+                draw_rec_marker(v, blink || *paused, seconds);
             } else if matches!(app.video, VideoStatus::Failed(_)) {
                 // Recording broke off; the details are on the results.
                 let w = v.text_width(t!("hud.rec_failed"), 16.0);
@@ -134,10 +134,16 @@ fn draw_pause<G>(app: &App<G>, v: &View, pointer: Option<Vec2>) {
     v.text_centered(t!("pause.help"), cx, 640.0, 20.0, TEXT);
 }
 
-fn draw_rec_marker(v: &View, lit: bool) {
+/// "● REC 0:42": the length of the video so far, as platforms limit it.
+/// Drawn in the window only; the video never contains it.
+fn draw_rec_marker(v: &View, lit: bool, seconds: f64) {
     let dot = if lit { ERROR } else { with_alpha(ERROR, 0.3) };
-    v.circle(vec2(462.0, 82.0), 6.0, dot);
-    v.text(t!("hud.rec"), 474.0, 89.0, 18.0, ERROR);
+    let whole = seconds.max(0.0) as u64;
+    let time = format!("{}:{:02}", whole / 60, whole % 60);
+    let text = t!("hud.rec", time = time);
+    let x = FIELD_W - 20.0 - v.text_width(&text, 18.0);
+    v.circle(vec2(x - 12.0, 82.0), 6.0, dot);
+    v.text(&text, x, 89.0, 18.0, ERROR);
 }
 
 fn draw_video_status(video: &VideoStatus, v: &View) {

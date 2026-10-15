@@ -14,6 +14,10 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ### Added
 
+- The REC marker shows the length of the recording so far ("REC 0:42"), in
+  the window only, never in the video.
+- docs/NEW_GAME.md: how to show hover in `draw` (the example game's button
+  now lights up under the mouse) and how to seed randomness per round.
 - `Game::SOUNDS`: a game's own WAV files (8- or 16-bit PCM), played with
   `Sfx::Game(n)` and mixed into the video. The example game plays
   `assets/chime.wav` on every fifth point.

@@ -143,7 +143,7 @@ const CATALOG: &[Text] = &[
     ("pause.resume", "Resume", "Fortsätt"),
     ("pause.abort", "Abort round", "Avbryt omgången"),
     ("pause.help", "Esc or P: resume", "Esc eller P: fortsätt"),
-    ("hud.rec", "REC", "REC"),
+    ("hud.rec", "REC {time}", "REC {time}"),
     ("hud.waiting_encoder", "Waiting for the video encoder...", "Väntar på videokodaren..."),
     ("hud.rec_failed", "Recording stopped", "Inspelningen stoppades"),
     // Results
