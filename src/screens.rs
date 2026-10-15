@@ -41,6 +41,10 @@ pub fn draw<G: Game>(
                 // Recording broke off; the details are on the results.
                 let w = v.text_width(t!("hud.rec_failed"), 16.0);
                 v.text(t!("hud.rec_failed"), FIELD_W - 20.0 - w, 89.0, 16.0, ERROR);
+            } else if app.video_cut_at_limit {
+                let text = t!("hud.video_full", max = clock(max_video_seconds()));
+                let w = v.text_width(&text, 16.0);
+                v.text(&text, FIELD_W - 20.0 - w, 89.0, 16.0, ACCENT);
             }
             if waiting && !*paused {
                 let text = t!("hud.waiting_encoder");
@@ -66,6 +70,10 @@ pub fn draw<G: Game>(
             let time = t!("results.time", time = seconds(app.play_time));
             v.text_centered(&time, cx, 345.0, 26.0, with_alpha(TEXT, 0.8));
             draw_video_status(&app.video, v);
+            if app.video_cut_at_limit {
+                let note = t!("results.video_limit", max = clock(max_video_seconds()));
+                v.text_wrapped_centered(&note, 500.0, 17.0, with_alpha(TEXT, 0.75));
+            }
             draw_buttons(
                 v,
                 &results_buttons(result.is_some(), &app.video),
@@ -134,16 +142,31 @@ fn draw_pause<G>(app: &App<G>, v: &View, pointer: Option<Vec2>) {
     v.text_centered(t!("pause.help"), cx, 640.0, 20.0, TEXT);
 }
 
-/// "● REC 0:42": the length of the video so far, as platforms limit it.
-/// Drawn in the window only; the video never contains it.
-fn draw_rec_marker(v: &View, lit: bool, seconds: f64) {
-    let dot = if lit { ERROR } else { with_alpha(ERROR, 0.3) };
+/// `m:ss`.
+fn clock(seconds: f64) -> String {
     let whole = seconds.max(0.0) as u64;
-    let time = format!("{}:{:02}", whole / 60, whole % 60);
-    let text = t!("hud.rec", time = time);
+    format!("{}:{:02}", whole / 60, whole % 60)
+}
+
+fn max_video_seconds() -> f64 {
+    crate::config::MAX_VIDEO_SECONDS.unwrap_or(0.0)
+}
+
+/// "● REC 0:42 / 3:00": the length of the video so far and its limit, as
+/// platforms limit clip length; yellow in the last ten seconds. Drawn in the
+/// window only; the video never contains it.
+fn draw_rec_marker(v: &View, lit: bool, seconds: f64) {
+    let (text, color) = match crate::config::MAX_VIDEO_SECONDS {
+        Some(max) => {
+            let text = t!("hud.rec_limit", time = clock(seconds), max = clock(max));
+            (text, if max - seconds <= 10.0 { ACCENT } else { ERROR })
+        }
+        None => (t!("hud.rec", time = clock(seconds)), ERROR),
+    };
+    let dot = if lit { color } else { with_alpha(color, 0.3) };
     let x = FIELD_W - 20.0 - v.text_width(&text, 18.0);
     v.circle(vec2(x - 12.0, 82.0), 6.0, dot);
-    v.text(&text, x, 89.0, 18.0, ERROR);
+    v.text(&text, x, 89.0, 18.0, color);
 }
 
 fn draw_video_status(video: &VideoStatus, v: &View) {

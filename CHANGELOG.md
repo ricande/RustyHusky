@@ -6,6 +6,33 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Videos stop at 3:00, the YouTube Shorts limit (`MAX_VIDEO_SECONDS` in
+  `src/config.rs`, `None` for no limit). The game goes on; the window shows
+  "Video full (3:00)" and the results explain why the video is shorter. The
+  REC marker shows the limit ("REC 0:42 / 3:00"), in yellow for the last ten
+  seconds.
+- The REC marker shows the length of the recording so far ("REC 0:42"), in
+  the window only, never in the video.
+- docs/NEW_GAME.md: how to show hover in `draw` (the example game's button
+  now lights up under the mouse) and how to seed randomness per round.
+- `Game::SOUNDS`: a game's own WAV files (8- or 16-bit PCM), played with
+  `Sfx::Game(n)` and mixed into the video. The example game plays
+  `assets/chime.wav` on every fifth point.
+- `View::image` draws an embedded image file (`include_bytes!`) in logical
+  coordinates, so it is scaled the same in the window and in the video. The
+  example game draws `assets/paw.png`.
+- `scripts/new-game.sh "My Game"` names a new game made from the template
+  and resets its changelog and rules; `docs/NEW_GAME.md` is a step-by-step
+  guide.
+
+### Changed
+
+- Prioritize recording is now the default recording mode, and old
+  `"recording": true` settings migrate to it. A saved `recording_mode` is
+  kept as it is.
+
 ### Fixed
 
 Found by building the first game on the template,
@@ -20,28 +47,6 @@ Found by building the first game on the template,
 - docs/NEW_GAME.md recommended the global `macroquad::rand`, which is not
   deterministic when tests run in parallel; it now shows a small per-game
   generator.
-
-### Changed
-
-- Prioritize recording is now the default recording mode, and old
-  `"recording": true` settings migrate to it. A saved `recording_mode` is
-  kept as it is.
-
-### Added
-
-- The REC marker shows the length of the recording so far ("REC 0:42"), in
-  the window only, never in the video.
-- docs/NEW_GAME.md: how to show hover in `draw` (the example game's button
-  now lights up under the mouse) and how to seed randomness per round.
-- `Game::SOUNDS`: a game's own WAV files (8- or 16-bit PCM), played with
-  `Sfx::Game(n)` and mixed into the video. The example game plays
-  `assets/chime.wav` on every fifth point.
-- `View::image` draws an embedded image file (`include_bytes!`) in logical
-  coordinates, so it is scaled the same in the window and in the video. The
-  example game draws `assets/paw.png`.
-- `scripts/new-game.sh "My Game"` names a new game made from the template
-  and resets its changelog and rules; `docs/NEW_GAME.md` is a step-by-step
-  guide.
 
 ## [0.2.0] - 2026-10-15
 

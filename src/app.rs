@@ -191,6 +191,9 @@ pub struct App<G> {
     pub video: VideoStatus,
     /// The player's Save/Discard choice, taken by `capture.rs`.
     pub video_request: Option<VideoRequest>,
+    /// The recording stopped at `config::MAX_VIDEO_SECONDS` while the round
+    /// went on.
+    pub video_cut_at_limit: bool,
     /// The player chose Quit.
     pub quit: bool,
     /// A round started this frame (see `take_round_started`).
@@ -216,6 +219,7 @@ impl<G: Game> App<G> {
             play_time: 0.0,
             video: VideoStatus::Off,
             video_request: None,
+            video_cut_at_limit: false,
             quit: false,
             round_started: false,
             game_input: Input::default(),
@@ -240,6 +244,7 @@ impl<G: Game> App<G> {
         self.play_time = 0.0;
         self.video = VideoStatus::Off;
         self.video_request = None;
+        self.video_cut_at_limit = false;
     }
 
     /// The game, if it is running (not paused): what is drawn into the video.

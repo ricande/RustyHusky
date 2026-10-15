@@ -125,6 +125,12 @@ Both modes:
   last frame before an abort). The video is exactly as long as its frames:
   number of frames / 60 s. Paused time adds nothing to game time, video or
   sound.
+- **Length limit:** a video is at most 3:00 (`MAX_VIDEO_SECONDS` in
+  `src/config.rs`; `None` removes the limit), the longest a YouTube Short may
+  be. If a round lasts longer, recording stops at exactly 3:00 and the game
+  goes on; the window shows "Video full (3:00)" and the results explain it.
+  A game decides its own level length; to fit a whole level in a Short, keep
+  it a little under 3:00.
 - **Afterwards:** the results screen shows "Finishing the video…" while the
   encoder finishes, then **Save video** and **Discard video**. Until you save,
   the video is only a temporary file in the system's temp folder. Leaving the
@@ -133,9 +139,9 @@ Both modes:
   Linux folder follows `XDG_VIDEOS_DIR`, macOS uses `~/Movies`, Windows
   `%USERPROFILE%\Videos`). Existing files are never overwritten; `-2`, `-3` …
   is added instead. The results screen shows the saved path.
-- **REC marker:** while recording, the window shows "● REC 0:42", the
-  length of the video so far (platforms limit clip length). It is never
-  part of the video.
+- **REC marker:** while recording, the window shows "● REC 0:42 / 3:00",
+  the length of the video so far and its limit, in yellow for the last ten
+  seconds. It is never part of the video.
 - **Sound:** the video has a stereo AAC sound track with the game's sound
   effects, placed by game time (in Prioritize recording, the time of the
   video frame in which they happened), so it stays in sync however long the

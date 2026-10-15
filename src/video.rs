@@ -316,6 +316,8 @@ pub struct Recorder {
     frames: u64,
     hits: Vec<SoundHit>,
     stopped: Option<Stopped>,
+    /// Most frames the video may have (`config::MAX_VIDEO_SECONDS`).
+    max_frames: Option<u64>,
 }
 
 impl Recorder {
@@ -374,6 +376,7 @@ impl Recorder {
             frames: 0,
             hits: Vec::new(),
             stopped: None,
+            max_frames: config::MAX_VIDEO_SECONDS.map(|s| (s * f64::from(FPS)).round() as u64),
         })
     }
 
@@ -383,12 +386,26 @@ impl Recorder {
         self.clock.advance(dt)
     }
 
+    /// The video has reached its length limit (`config::MAX_VIDEO_SECONDS`)
+    /// and takes no more frames.
+    pub fn at_limit(&self) -> bool {
+        self.max_frames.is_some_and(|max| self.frames >= max)
+    }
+
     /// Offers a picture for the next `copies` video frames, without waiting.
+    /// Frames beyond the length limit are left out (see `at_limit`).
     pub fn offer(&mut self, rgba: Vec<u8>, copies: u64) -> Offer {
         debug_assert_eq!(rgba.len(), self.frame_bytes);
         let Some(tx) = &self.frames_tx else {
             return Offer::Failed;
         };
+        let room = self
+            .max_frames
+            .map_or(u64::MAX, |m| m.saturating_sub(self.frames));
+        let copies = copies.min(room);
+        if copies == 0 {
+            return Offer::Accepted;
+        }
         match tx.try_send((Arc::new(rgba), copies)) {
             Ok(()) => {
                 self.frames += copies;
@@ -535,6 +552,10 @@ impl Recorder {
     #[cfg(target_os = "linux")]
     pub fn hits(&self) -> &[SoundHit] {
         &self.hits
+    }
+
+    pub fn set_max_frames(&mut self, max: Option<u64>) {
+        self.max_frames = max;
     }
 
     pub fn pid(&self) -> u32 {
@@ -1081,6 +1102,29 @@ pub(crate) mod tests {
         assert!(longest < MAX_PUSH, "one frame waited {longest:?}");
         assert!(kept_up && finished.is_ok(), "{finished:?}");
         assert_eq!(bytes.unwrap(), frames * u64::from(WIDTH * HEIGHT * 4));
+    }
+
+    /// The video never gets longer than its limit; repeated pictures are cut
+    /// to fit, and later ones are left out.
+    #[cfg(unix)]
+    #[test]
+    fn a_video_stops_at_its_length_limit() {
+        let frame = || vec![0u8; (WIDTH * HEIGHT * 4) as usize];
+        let mut rec = fake_encoder("cat > /dev/null");
+        rec.max_frames = Some(5);
+        assert!(!rec.at_limit());
+        rec.push_frame(frame(), 3);
+        rec.push_frame(frame(), 3);
+        assert_eq!(rec.frames, 5, "cut to the limit");
+        assert!(rec.at_limit() && !rec.failed());
+        rec.push_frame(frame(), 1);
+        assert_eq!(rec.frames, 5, "nothing after the limit");
+        let recording = rec.finish().unwrap();
+        assert!((recording.duration() - 5.0 / 60.0).abs() < 1e-9);
+        recording.discard();
+        // The configured limit is exactly 3:00 at 60 fps.
+        let max = config::MAX_VIDEO_SECONDS.map(|s| (s * f64::from(FPS)).round() as u64);
+        assert_eq!(max, Some(10_800));
     }
 
     #[cfg(unix)]

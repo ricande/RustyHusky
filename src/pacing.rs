@@ -126,7 +126,7 @@ impl Lockstep {
             self.credit = 0.0;
             return Next::Continue;
         };
-        if game.finished().is_some() {
+        if game.finished().is_some() || rec.at_limit() {
             return Next::Finish;
         }
         self.credit = (self.credit + frame_time).min(f64::from(MAX_PER_DISPLAY) * FRAME_DT);
@@ -158,7 +158,7 @@ impl Lockstep {
                     return Next::Continue;
                 }
             }
-            if finished {
+            if finished || rec.at_limit() {
                 return Next::Finish;
             }
         }
@@ -500,6 +500,29 @@ mod tests {
         assert_eq!(lockstep.produced(), produced);
         rec.cancel();
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    /// At the length limit no more frames are produced, the recording is to
+    /// be finished, and the game is left to go on in real time.
+    #[test]
+    fn production_stops_at_the_length_limit() {
+        let mut app: App<Counter> = App::new(Settings::default(), None);
+        app.handle(&key(Key::Enter));
+        let mut rec = Recorder::with_script("cat > /dev/null", BYTES, 24);
+        rec.set_max_frames(Some(10));
+        let mut lockstep = Lockstep::default();
+        let mut next = Next::Continue;
+        for _ in 0..50 {
+            next = lockstep.frame(&mut app, &mut rec, 1.0 / 60.0, render, |_| {});
+            if next != Next::Continue {
+                break;
+            }
+        }
+        assert_eq!(next, Next::Finish);
+        assert_eq!(lockstep.produced(), 10);
+        assert!(rec.at_limit());
+        assert!(app.in_round() && app.running_game().unwrap().finished().is_none());
+        rec.cancel();
     }
 
     /// While paused nothing is produced and no time is saved up: the frame

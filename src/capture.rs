@@ -143,6 +143,7 @@ impl Capture {
                     // stopped at once; the game goes on without recording.
                     game.finished().is_some()
                         || self.recorder.as_ref().is_some_and(Recorder::failed)
+                        || self.recorder.as_ref().is_some_and(Recorder::at_limit)
                 }
                 // Paused frames are left out; otherwise the round was left.
                 None => !app.paused(),
@@ -205,11 +206,14 @@ impl Capture {
     }
 
     /// Stops recording; the encoder finishes the file on a worker thread.
-    fn finish<G>(&mut self, app: &mut App<G>) {
+    fn finish<G: Game>(&mut self, app: &mut App<G>) {
         self.lockstep = None;
         let Some(rec) = self.recorder.take() else {
             return;
         };
+        // Stopped by the length limit while the round goes on.
+        app.video_cut_at_limit =
+            rec.at_limit() && app.running_game().is_some_and(|g| g.finished().is_none());
         app.video = VideoStatus::Finishing;
         self.finishing = Some(Job {
             round: self.round,

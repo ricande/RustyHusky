@@ -144,6 +144,9 @@ const CATALOG: &[Text] = &[
     ("pause.abort", "Abort round", "Avbryt omgången"),
     ("pause.help", "Esc or P: resume", "Esc eller P: fortsätt"),
     ("hud.rec", "REC {time}", "REC {time}"),
+    ("hud.rec_limit", "REC {time} / {max}", "REC {time} / {max}"),
+    ("hud.video_full", "Video full ({max})", "Videon full ({max})"),
+    ("results.video_limit", "The video stopped at the {max} limit for Shorts; the round went on.", "Videon stoppades vid gränsen {max} för Shorts; omgången fortsatte."),
     ("hud.waiting_encoder", "Waiting for the video encoder...", "Väntar på videokodaren..."),
     ("hud.rec_failed", "Recording stopped", "Inspelningen stoppades"),
     // Results

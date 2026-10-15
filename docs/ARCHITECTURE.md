@@ -163,6 +163,11 @@ them, so `app.rs` stays window-free.
    In both, paused frames are not captured and advance nothing, and the
    video's length is the number of frames queued / 60 s
    (`Recorder::frames`), so sound and picture end together.
+   `Recorder` takes at most `config::MAX_VIDEO_SECONDS` × 60 frames
+   (10 800 for 3:00); repeated pictures are cut to fit. At the limit the
+   recording is finished like at the end of a level, but the round goes on
+   in real time and `App::video_cut_at_limit` lets the window and the
+   results say so.
 4. **Stop.** On the frame the game reports `finished`, that frame is recorded
    and the recorder is closed; for an aborted round the recorder is closed
    on the frame the round is left. Closing runs on a worker thread

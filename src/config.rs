@@ -14,6 +14,12 @@ pub const APP_NAME: &str = "RustyHusky";
 /// temporary file names.
 pub const APP_ID: &str = "rustyhusky";
 
+/// The longest video the recorder makes, in seconds: 180 is the limit for a
+/// YouTube Short. When a round goes on longer, recording stops there and
+/// the game continues; the results offer the video as usual. `None` records
+/// whole rounds however long they are.
+pub const MAX_VIDEO_SECONDS: Option<f64> = Some(180.0);
+
 /// Prefix of the environment variables, e.g. `RUSTYHUSKY_LANG`.
 pub const ENV_PREFIX: &str = "RUSTYHUSKY";
 

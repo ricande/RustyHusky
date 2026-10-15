@@ -39,6 +39,11 @@ helpers your game does not use are fine.
 
 ## 3. Rules that keep the video right
 
+- Videos stop at 3:00 (`MAX_VIDEO_SECONDS` in `src/config.rs`), the YouTube
+  Shorts limit, while the game goes on. If a whole level should fit in a
+  Short, make it a little shorter than that: the first video frame is at
+  time 0 and the level's last frame comes one step after its end time.
+
 - Keep all game time in `update`; never read the clock (`get_time`). The
   video is made from your game's own time.
 - Draw only through `View` and only in logical coordinates. Then the window
