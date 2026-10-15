@@ -17,12 +17,14 @@ All notable changes to RustyHusky are documented here. The format follows
   the example's is "Build. Play. Record. Share.".
 - Script commands `hold <key>` and `release <key>` for held keys.
 - GitHub Actions CI: fmt, clippy and tests (with FFmpeg, so the video tests
-  run), and a build with the minimum Rust version 1.82, now declared as
+  run), and a build with the minimum Rust version, now declared as
   `rust-version` in `Cargo.toml`.
 - A screenshot in the README.
 
 ### Changed
 
+- The minimum Rust version is 1.87, not 1.82 as documented before: the
+  dependency `fontdue` (via Macroquad) needs 1.87. Found by the new CI job.
 - Keys are defined in one table, `ui::KEYS` (key, key code, script name),
   instead of four places.
 

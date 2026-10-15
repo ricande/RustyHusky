@@ -27,7 +27,7 @@ cargo test
 
 GitHub Actions (`.github/workflows/ci.yml`) runs the same checks on every
 push and pull request, with FFmpeg installed so the video tests run, and
-builds with the minimum Rust version, 1.82 (`rust-version` in `Cargo.toml`).
+builds with the minimum Rust version, 1.87 (`rust-version` in `Cargo.toml`).
 
 Run with `cargo run --release`. If `cargo` is not on `PATH`, it is in
 `~/.cargo/bin`.

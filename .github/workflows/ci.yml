@@ -28,7 +28,7 @@ jobs:
       - run: cargo test --locked
 
   msrv:
-    name: build with the minimum Rust version (1.82)
+    name: build with the minimum Rust version (1.87)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +36,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev
-      - uses: dtolnay/rust-toolchain@1.82
+      - uses: dtolnay/rust-toolchain@1.87
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked

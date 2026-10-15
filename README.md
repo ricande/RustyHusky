@@ -42,7 +42,7 @@ startup, so there are no asset files.
 
 ## Requirements
 
-- Rust (stable, 1.82 or later) via [rustup](https://rustup.rs)
+- Rust (stable, 1.87 or later) via [rustup](https://rustup.rs)
 - Linux: development packages for X11, ALSA and OpenGL, e.g. on Debian/Ubuntu:
   `sudo apt install libx11-dev libxi-dev libgl1-mesa-dev libasound2-dev`
 - Windows and macOS need nothing extra to build.
