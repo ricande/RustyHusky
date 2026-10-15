@@ -2,9 +2,9 @@
 name = "rustyhusky"
 version = "0.1.0"
 edition = "2021"
-description = "A small starter template for portrait 2D games in Rust with Macroquad"
+description = "A Rust starter framework for portrait games with automatic 1080 x 1920, 60 fps gameplay recording"
 license = "MIT"
-repository = "https://github.com/ricande/rustyhusky"
+repository = "https://github.com/ricande/RustyHusky"
 readme = "README.md"
 publish = false
 

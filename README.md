@@ -1,20 +1,34 @@
 # RustyHusky
 
-A small, reusable starter template for 2D games in Rust with
-[Macroquad](https://macroquad.rs). It gives a new game everything around the
-game itself, so you can start on the gameplay right away:
+**Build. Play. Record. Share.**
 
-- Portrait 9:16 view with a logical resolution of 540 × 960, scaled to any
-  window without cropping or stretching, with correct mouse coordinates
-- Main menu (Play, Settings, Quit), pause menu, results screen
-- Settings for language, volume and recording, saved between runs
-- English and Swedish through one translation catalog
-- Automatic recording of every round as a 1080 × 1920, 60 fps MP4 with sound,
-  which you save or discard afterwards
-- A fixed simulation time step
-- A placeholder game that shows "Your game here", to be replaced by yours
+RustyHusky is a Rust starter framework for creating portrait games and
+recording gameplay videos for social media platforms such as YouTube Shorts,
+TikTok, and Instagram Reels. Build a game, play it, record it, and share it.
 
-The template grew out of [RustOut](https://github.com/ricande/RustOut), a
+- **Portrait 9:16 gameplay** – a logical 540 × 960 view, scaled to any window
+  without cropping or stretching, with correct mouse coordinates.
+- **Automatic gameplay recording with audio** – every round is recorded
+  while you play, including the game's sound effects.
+- **1080 × 1920 MP4 video at 60 fps** – H.264 video with AAC stereo sound,
+  independent of the window size.
+- **Save or discard the recording after a level** – nothing is written to
+  your video folder until you choose Save video.
+- **A reusable foundation for quickly building new games** – menus,
+  settings, pause, results, scaling and recording are done; you replace one
+  game module.
+- **English by default, with i18n support** – all texts go through one
+  translation catalog; Swedish is included.
+
+RustyHusky creates video files that you publish yourself. It does not upload
+anything to social media platforms.
+
+Built with [Macroquad](https://macroquad.rs). It also has a main menu (Play,
+Settings, Quit), settings for language, volume and recording that are saved
+between runs, a fixed simulation time step, and a placeholder game that shows
+"Your game here", to be replaced by yours.
+
+The framework grew out of [RustOut](https://github.com/ricande/RustOut), a
 Breakout-style game; its general parts were kept and the Breakout parts
 removed. All graphics are drawn in code and the sounds are synthesized at
 startup, so there are no asset files.

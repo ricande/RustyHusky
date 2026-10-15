@@ -6,7 +6,8 @@ current game's rules are in [docs/GAME_RULES.md](docs/GAME_RULES.md).
 
 ## Project in one paragraph
 
-RustyHusky is a small starter template for portrait 2D games in Rust with
+RustyHusky is a Rust starter framework for portrait games with automatic
+gameplay recording (for YouTube Shorts, TikTok, Instagram Reels), built with
 Macroquad: a logical 540 × 960 view scaled to the window, main menu,
 settings (language, volume, recording), pause and results screens,
 English/Swedish translations and automatic MP4 recording of each round via

@@ -6,6 +6,12 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- README and repository description state the project's purpose: portrait
+  games and gameplay videos for YouTube Shorts, TikTok and Instagram Reels.
+  Videos are published by the user; there is no automatic upload.
+
 ## [0.1.0] - 2026-10-15
 
 The first version of the template, built from the general parts of
