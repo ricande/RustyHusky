@@ -180,6 +180,8 @@ the rest. In short:
    - `update(dt)` – game logic with the fixed step `FIXED_DT` (1/120 s)
    - `draw(&View)` – draw in logical 540 × 960 coordinates through `View`,
      including images from `assets/` with `View::image`
+   - `SOUNDS` – your own WAV files (optional), played with `Sfx::Game(n)`
+     and mixed into the video
    - `take_sounds()` – sound effects started since the last call
    - `finished()` – `Some(RoundResult { score })` when the level is done
 3. Add `mod mygame;` and set `type ActiveGame = mygame::MyGame;` in

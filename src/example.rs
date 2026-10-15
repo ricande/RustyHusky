@@ -30,6 +30,10 @@ const ORBIT_R: f32 = 120.0;
 const PAW: &[u8] = include_bytes!("../assets/paw.png");
 const PAW_SIZE: f32 = 96.0;
 
+/// The example's own sound: every fifth point plays it instead of the
+/// framework's blip.
+const CHIME: usize = 0;
+
 /// The example's texts; see `Game::TEXTS`.
 const TEXTS: &[Text] = &[
     (
@@ -59,6 +63,7 @@ pub struct ExampleGame {
 
 impl Game for ExampleGame {
     const TEXTS: &'static [Text] = TEXTS;
+    const SOUNDS: &'static [&'static [u8]] = &[include_bytes!("../assets/chime.wav")];
 
     fn new(level: u32) -> Self {
         ExampleGame {
@@ -76,7 +81,12 @@ impl Game for ExampleGame {
         }
         if input.key(Key::Space) {
             self.score += 1;
-            self.sounds.push(Sfx::Blip);
+            let sound = if self.score.is_multiple_of(5) {
+                Sfx::Game(CHIME)
+            } else {
+                Sfx::Blip
+            };
+            self.sounds.push(sound);
         }
         if input.key(Key::Enter) || input.clicked(FINISH_BUTTON) {
             self.done = true;

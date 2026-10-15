@@ -46,8 +46,9 @@ see [docs/UPSTREAM_FIXES.md](docs/UPSTREAM_FIXES.md).
 
 ## Assets
 
-`assets/paw.png` was drawn for RustyHusky (generated with ImageMagick) and
-is covered by the project's license, GPL-3.0-or-later.
+`assets/paw.png` (generated with ImageMagick) and `assets/chime.wav` (an
+880 Hz tone generated with FFmpeg) were made for RustyHusky and are covered
+by the project's license, GPL-3.0-or-later.
 
 ## FFmpeg
 

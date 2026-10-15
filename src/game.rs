@@ -25,6 +25,11 @@ pub trait Game {
     /// the line under the title in the main menu.
     const TEXTS: &'static [Text];
 
+    /// The game's own sounds: WAV files (8- or 16-bit PCM), usually
+    /// `include_bytes!("../assets/….wav")`. Play number `n` by returning
+    /// `Sfx::Game(n)` from `take_sounds`; it is also mixed into the video.
+    const SOUNDS: &'static [&'static [u8]] = &[];
+
     /// A new round. `level` is 1 for the first round after the main menu and
     /// grows by one for each "Next round".
     fn new(level: u32) -> Self

@@ -14,6 +14,9 @@ All notable changes to RustyHusky are documented here. The format follows
 
 ### Added
 
+- `Game::SOUNDS`: a game's own WAV files (8- or 16-bit PCM), played with
+  `Sfx::Game(n)` and mixed into the video. The example game plays
+  `assets/chime.wav` on every fifth point.
 - `View::image` draws an embedded image file (`include_bytes!`) in logical
   coordinates, so it is scaled the same in the window and in the video. The
   example game draws `assets/paw.png`.
